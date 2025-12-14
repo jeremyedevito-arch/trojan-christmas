@@ -34,7 +34,7 @@
   const keys = new Set();
   const touch = { left: false, right: false };
 
-  // -------------------- Resize (robust for phone rotation) --------------------
+  // -------------------- Resize (debounced for rotation stability) --------------------
   function getViewportSize() {
     const vv = window.visualViewport;
     const w = vv ? Math.round(vv.width) : window.innerWidth;
@@ -42,7 +42,7 @@
     return { w, h };
   }
 
-  function resize() {
+  function doResize() {
     const { w, h } = getViewportSize();
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
     canvas.width = Math.floor(w * dpr);
@@ -55,10 +55,21 @@
     state.h = h;
   }
 
-  window.addEventListener("resize", resize);
-  window.addEventListener("orientationchange", () => setTimeout(resize, 80));
-  if (window.visualViewport) window.visualViewport.addEventListener("resize", resize);
-  resize();
+  // Debounce to avoid “resize thrash” when browser bars settle
+  let resizeTimer = null;
+  let settleTimer = null;
+  function requestResize() {
+    clearTimeout(resizeTimer);
+    clearTimeout(settleTimer);
+    resizeTimer = setTimeout(doResize, 120);
+    settleTimer = setTimeout(doResize, 380);
+  }
+
+  window.addEventListener("resize", requestResize);
+  window.addEventListener("orientationchange", requestResize);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", requestResize);
+
+  doResize();
 
   // -------------------- Web Audio (SFX + hallway murmur) --------------------
   let audioCtx = null;
@@ -143,18 +154,14 @@
     },
   };
 
-  // NEW ambience: "hallway murmur" (not sci-fi)
   function ensureAmbience() {
     if (state.muted) { stopAmbience(); return; }
     if (!audioCtx || audioCtx.state !== "running") return;
     if (ambience) return;
 
-    // A loop of filtered noise around speech-ish bands (murmur),
-    // with very gentle amplitude movement.
     const master = audioCtx.createGain();
     master.gain.value = 0.020; // subtle
 
-    // noise buffer (2s loop)
     const dur = 2.0;
     const size = Math.floor(audioCtx.sampleRate * dur);
     const buf = audioCtx.createBuffer(1, size, audioCtx.sampleRate);
@@ -165,7 +172,6 @@
     src.buffer = buf;
     src.loop = true;
 
-    // bandpass around "murmur" frequencies
     const bp1 = audioCtx.createBiquadFilter();
     bp1.type = "bandpass";
     bp1.frequency.value = 520;
@@ -176,26 +182,23 @@
     bp2.frequency.value = 950;
     bp2.Q.value = 0.9;
 
-    // mix the two bands
     const mix1 = audioCtx.createGain();
     mix1.gain.value = 0.55;
     const mix2 = audioCtx.createGain();
     mix2.gain.value = 0.45;
 
-    // gentle movement (like ebb/flow of chatter)
     const lfo = audioCtx.createOscillator();
     lfo.type = "sine";
     lfo.frequency.value = 0.22;
 
     const lfoGain = audioCtx.createGain();
-    lfoGain.gain.value = 0.012; // movement depth
+    lfoGain.gain.value = 0.012;
     lfo.connect(lfoGain);
 
     const amp = audioCtx.createGain();
-    amp.gain.value = 0.035; // base loudness
+    amp.gain.value = 0.035;
     lfoGain.connect(amp.gain);
 
-    // soft compressor to keep it smooth
     const comp = audioCtx.createDynamicsCompressor();
     comp.threshold.value = -28;
     comp.ratio.value = 6;
@@ -204,10 +207,8 @@
     src.connect(bp2);
     bp1.connect(mix1);
     bp2.connect(mix2);
-
     mix1.connect(amp);
     mix2.connect(amp);
-
     amp.connect(comp);
     comp.connect(master);
     master.connect(audioCtx.destination);
@@ -330,19 +331,6 @@
     L1.carrots = L1.carrots.filter(c => c.alive);
   }
 
-  function updateMarchHare(dt) {
-    if (!L1.hare.active && Math.random() < 0.006) {
-      L1.hare.active = true;
-      L1.hare.t = 0;
-      L1.hare.x = L1.camX + state.w + 40;
-    }
-    if (L1.hare.active) {
-      L1.hare.t += dt;
-      L1.hare.x -= 520 * dt;
-      if (L1.hare.t > 1.2) L1.hare.active = false;
-    }
-  }
-
   function updateLevel1(dt) {
     const floorY = state.h * 0.78;
 
@@ -375,7 +363,6 @@
 
     spawnBoxesAhead(floorY);
     updateCarrots(dt, floorY);
-    updateMarchHare(dt);
 
     for (const box of L1.boxes) {
       const sx = box.x - L1.camX;
@@ -418,16 +405,32 @@
     ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
   }
 
-  function drawCarrot(cx, y, s = 1) {
+  function drawMiniPortrait(x, y, name) {
+    const st = CHAR_STYLE[name] || CHAR_STYLE.Holli;
+    // portrait frame
+    drawPixelRect(x, y, 48, 52, "rgba(255,255,255,0.18)");
+    drawPixelRect(x + 2, y + 2, 44, 48, "rgba(0,0,0,0.45)");
+
+    // head
+    drawPixelRect(x + 14, y + 10, 20, 16, st.skin);
+    drawPixelRect(x + 14, y + 10, 20, 6, st.hair);
+    // eyes
+    drawPixelRect(x + 20, y + 18, 2, 2, "#1A1A1A");
+    drawPixelRect(x + 26, y + 18, 2, 2, "#1A1A1A");
+    // body
+    drawPixelRect(x + 14, y + 28, 20, 14, st.shirt);
+    drawPixelRect(x + 14, y + 38, 20, 4, st.pants);
+  }
+
+  function drawCarrot(cx, y) {
     const x = Math.round(cx);
     const yy = Math.round(y);
-    drawPixelRect(x + 6*s, yy + 0*s, 4*s, 2*s, "#3CFF74");
-    drawPixelRect(x + 5*s, yy + 2*s, 6*s, 2*s, "#2FE35F");
-    drawPixelRect(x + 4*s, yy + 4*s, 8*s, 2*s, "#FF8A2A");
-    drawPixelRect(x + 5*s, yy + 6*s, 6*s, 2*s, "#FF7A1A");
-    drawPixelRect(x + 6*s, yy + 8*s, 4*s, 2*s, "#FF6A0A");
-    drawPixelRect(x + 7*s, yy +10*s, 2*s, 2*s, "#FF5A00");
-    drawPixelRect(x + 6*s, yy + 5*s, 1*s, 4*s, "#FFD6A8");
+    drawPixelRect(x + 6, yy + 0, 4, 2, "#3CFF74");
+    drawPixelRect(x + 5, yy + 2, 6, 2, "#2FE35F");
+    drawPixelRect(x + 4, yy + 4, 8, 2, "#FF8A2A");
+    drawPixelRect(x + 5, yy + 6, 6, 2, "#FF7A1A");
+    drawPixelRect(x + 6, yy + 8, 4, 2, "#FF6A0A");
+    drawPixelRect(x + 7, yy +10, 2, 2, "#FF5A00");
   }
 
   function drawCrate(x, y, w, h, opened, decoy) {
@@ -440,52 +443,12 @@
     ctx.lineWidth = 2;
     ctx.strokeRect(Math.round(x)+1, Math.round(y)+1, Math.round(w)-2, Math.round(h)-2);
 
-    const slatCount = 3;
-    for (let i = 1; i <= slatCount; i++) {
-      const yy = y + (h * i) / (slatCount + 1);
+    for (let i = 1; i <= 3; i++) {
+      const yy = y + (h * i) / 4;
       drawPixelRect(x + 6, yy - 2, w - 12, 3, dark);
     }
 
-    if (opened) drawPixelRect(x + 6, y + 6, w - 12, 5, "rgba(0,0,0,0.18)");
     if (opened && decoy) drawPixelRect(x + w/2 - 10, y + h/2 - 2, 20, 4, "rgba(0,0,0,0.25)");
-  }
-
-  function drawChibiPlayer() {
-    const speedMag = Math.min(1, Math.abs(player.vx) / PHYS.moveSpeed);
-    const bob = Math.round(Math.sin(state.t * 14) * 2 * speedMag);
-    const px = Math.round(player.x);
-    const py = Math.round(player.y + bob);
-
-    const st = player.style || CHAR_STYLE.Holli;
-    const headW = 16, headH = 14;
-    const bodyW = 16, bodyH = 12;
-    const legW = 6, legH = 8;
-
-    const cx = px + Math.round((player.w - headW) / 2);
-    const headY = py + 2;
-    const bodyY = headY + headH;
-    const legY  = bodyY + bodyH;
-
-    drawPixelRect(px + 6, py + player.h - 3, player.w - 12, 3, "rgba(0,0,0,0.25)");
-    drawPixelRect(cx, headY, headW, headH, st.skin);
-    drawPixelRect(cx, headY, headW, 5, st.hair);
-
-    const eyeY = headY + 7;
-    if (player.facing === 1) {
-      drawPixelRect(cx + 9, eyeY, 2, 2, "#1A1A1A");
-      drawPixelRect(cx + 12, eyeY, 2, 2, "#1A1A1A");
-    } else {
-      drawPixelRect(cx + 2, eyeY, 2, 2, "#1A1A1A");
-      drawPixelRect(cx + 5, eyeY, 2, 2, "#1A1A1A");
-    }
-
-    const bx = px + Math.round((player.w - bodyW) / 2);
-    drawPixelRect(bx, bodyY, bodyW, bodyH, st.shirt);
-    drawPixelRect(bx, bodyY + bodyH - 3, bodyW, 3, st.pants);
-
-    const step = Math.round(Math.sin(state.t * 14) * 2 * speedMag);
-    drawPixelRect(bx + 2, legY + Math.max(0, -step), legW, legH + Math.min(0, step), st.pants);
-    drawPixelRect(bx + bodyW - 2 - legW, legY + Math.max(0, step), legW, legH + Math.min(0, -step), st.pants);
   }
 
   function drawTitle() {
@@ -497,28 +460,46 @@
     drawCenteredText("Choose Your Character", state.h * 0.18, 28);
     const c = state.chars[state.selected];
     drawCenteredText(`${c.name} — ${c.tag}`, state.h * 0.26, 16, 0.9);
+
+    // portraits row (restored)
+    const midY = state.h * 0.55;
+    const spacing = Math.min(110, Math.max(72, state.w / 6.2));
+    const totalW = spacing * (state.chars.length - 1);
+    const startX = Math.round(state.w / 2 - totalW / 2);
+
+    for (let i = 0; i < state.chars.length; i++) {
+      const x = startX + i * spacing;
+      const y = Math.round(midY - 26);
+      const isSel = i === state.selected;
+
+      // selection glow
+      if (isSel) {
+        drawPixelRect(x - 6, y - 6, 60, 64, "rgba(255,255,255,0.22)");
+      }
+      drawMiniPortrait(x, y, state.chars[i].name);
+
+      // label
+      ctx.fillStyle = isSel ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.65)";
+      ctx.font = `700 ${isSel ? 13 : 12}px system-ui, Arial`;
+      ctx.textAlign = "center";
+      ctx.fillText(state.chars[i].name, x + 24, y + 70);
+    }
+
     drawCenteredText("← / → to choose • Enter to play", state.h * 0.85, 16, 0.85);
     drawCenteredText("Tap left/right to choose • Tap center to play", state.h * 0.90, 14, 0.6);
   }
 
-  // HUD text scaling so landscape never overlaps
   function uiSizes() {
     const shortSide = Math.min(state.w, state.h);
-    const s = Math.max(0.75, Math.min(1.0, shortSide / 520)); // 0.75..1.0
-    return {
-      hud: Math.round(16 * s),
-      hint: Math.round(13 * s),
-      line: Math.round(22 * s),
-    };
+    const s = Math.max(0.75, Math.min(1.0, shortSide / 520));
+    return { hud: Math.round(16 * s), hint: Math.round(13 * s), line: Math.round(22 * s) };
   }
 
   function drawLevel1() {
     const floorY = state.h * 0.78;
 
-    // simple background
     drawPixelRect(0, floorY, state.w, state.h - floorY, "rgba(255,255,255,0.10)");
 
-    // boxes + carrots
     for (const box of L1.boxes) {
       const x = box.x - L1.camX;
       if (x < -160 || x > state.w + 160) continue;
@@ -526,14 +507,14 @@
     }
     for (const c of L1.carrots) {
       const cx = c.x - L1.camX;
-      drawCarrot(cx, c.y, 1);
+      drawCarrot(cx, c.y);
     }
 
-    drawChibiPlayer();
+    // player (simple block for now)
+    drawPixelRect(player.x, player.y, player.w, player.h, "#FFFFFF");
 
     const U = uiSizes();
 
-    // left HUD
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.font = `700 ${U.hud}px system-ui, Arial`;
     ctx.textAlign = "left";
@@ -541,11 +522,9 @@
     ctx.fillText(`Phase: ${L1.phase}`, 16, 16 + U.line * 2);
     ctx.fillText(`Score: ${L1.score}`, 16, 16 + U.line * 3);
 
-    // right HUD
     ctx.textAlign = "right";
     ctx.fillText(`Jump: Space • Back: Esc`, state.w - 16, 16 + U.line);
 
-    // mobile hint goes LOWER so it won't collide in landscape
     ctx.font = `700 ${U.hint}px system-ui, Arial`;
     ctx.fillStyle = "rgba(255,255,255,0.70)";
     ctx.fillText(`Phone: hold left/right • tap middle to jump`, state.w - 16, 16 + U.line * 2);
@@ -583,6 +562,7 @@
       if (e.key === "r" || e.key === "R") { resetLevel1(); SFX.tick(); }
     }
   });
+
   window.addEventListener("keyup", (e) => keys.delete(e.key));
 
   function clearTouch() { touch.left = false; touch.right = false; }
@@ -620,19 +600,14 @@
     if (e.buttons !== 1) return;
     setTouchFromX(e.clientX);
   });
+
   canvas.addEventListener("pointerup", clearTouch);
   canvas.addEventListener("pointercancel", clearTouch);
   canvas.addEventListener("pointerleave", clearTouch);
 
   // -------------------- Main loop --------------------
   let lastTs = 0;
-
   function loop(ts) {
-    // **Fix “stays huge after rotation”**
-    // If viewport changed, resize immediately (no reload needed).
-    const vp = getViewportSize();
-    if (vp.w !== state.w || vp.h !== state.h) resize();
-
     const now = ts / 1000;
     const dt = lastTs ? Math.min(0.033, now - lastTs) : 0;
     lastTs = now;
@@ -648,7 +623,7 @@
   }
   requestAnimationFrame(loop);
 
-  // -------------------- HUD: mute button + toast --------------------
+  // -------------------- Mute button + toast --------------------
   const muteBtn = document.getElementById("muteBtn");
   muteBtn.addEventListener("click", () => {
     state.muted = !state.muted;
