@@ -24,7 +24,7 @@
   const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 520;
 
 // Smaller internal resolution = bigger-looking game on phones (no logic changes)
-const VIEW = {
+let VIEW = {
   gw: isPhone ? 560 : 960,
   gh: isPhone ? 315 : 540, // keep 16:9
   scale: 1,
@@ -67,7 +67,10 @@ const VIEW = {
     ctx.imageSmoothingEnabled = false;
 
     state.w = w;
-    state.h = h;
+    state.h = h; 
+    const phone = Math.min(state.w, state.h) <= 520;
+    VIEW.gw = phone ? 560 : 960;
+    VIEW.gh = phone ? 315 : 540;
     computeView();
   }
   window.addEventListener("resize", resize);
