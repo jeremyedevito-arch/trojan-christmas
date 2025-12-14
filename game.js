@@ -77,25 +77,35 @@ function resetLevel1() {
   window.addEventListener("keydown", (e) => {
     keys.add(e.key);
     // Level 1 controls
+// Level 1 controls
 if (state.screen === "level1") {
   if ((e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") && player.onGround) {
     player.vy = -PHYS.jumpV;
     player.onGround = false;
   }
+
+  // Back to character select
   if (e.key === "Escape") {
     state.screen = "select";
     resetLevel1();
+    // If you have input locking helpers, uncomment these:
+    // lockInput();
   }
+
+  // Restart level
   if (e.key === "r" || e.key === "R") {
     resetLevel1();
   }
 }
+    
     if (state.screen === "title" && (e.key === "Enter" || e.key === " ")) state.screen = "select";
     if (state.screen === "select") {
       if (e.key === "ArrowLeft") state.selected = (state.selected + state.chars.length - 1) % state.chars.length;
       if (e.key === "ArrowRight") state.selected = (state.selected + 1) % state.chars.length;
-      if (e.key === "Enter" || e.key === " ") resetLevel1();
-state.screen = "level1";
+      if (e.key === "Enter" || e.key === " ") {
+  resetLevel1();
+  state.screen = "level1";
+}
     }
   });
   window.addEventListener("keyup", (e) => keys.delete(e.key));
@@ -115,8 +125,10 @@ state.screen = "level1";
     if (state.screen === "select") {
       if (x < state.w * 0.33) state.selected = (state.selected + state.chars.length - 1) % state.chars.length;
       else if (x > state.w * 0.66) state.selected = (state.selected + 1) % state.chars.length;
-      else resetLevel1();
- state.screen = "level1";
+      else {
+  resetLevel1();
+  state.screen = "level1";
+}
     }
   });
 
