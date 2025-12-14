@@ -362,7 +362,7 @@
     L1.shotAttempts = 0;
     L1.shotCooldown = 0;
     // Cup near ceiling/top-right
-    L1.cup = { x: VIEW.gw - 70, y: 46, w: 26, h: 16 };
+    L1.cup = { x: VIEW.gw - 92, y: 96, w: 30, h: 18 }; // lower + a bit bigger
   }
 
   function fireShot() {
@@ -376,17 +376,33 @@
     const startX = player.x + player.w - 6;
     const startY = player.y + 10;
 
-    // “Impossible”: slight random drift so it’s not automatic
-    const drift = (Math.random() * 2 - 1) * 90;
+    // Aim toward the cup (still a little "imperfect")
+const targetX = L1.cup.x + L1.cup.w * 0.5;
+const targetY = L1.cup.y + L1.cup.h * 0.6;
 
-    L1.shots.push({
-      x: startX,
-      y: startY,
-      vx: 520 + drift,    // forward/right
-      vy: -720,           // up
-      r: 4,
-      alive: true,
-    });
+const dx = targetX - startX;
+const dy = targetY - startY;
+
+// pick a flight time that feels good
+const T = 0.72;       // seconds (tweakable)
+const g = 1100;       // must match updateShots gravity
+
+// basic projectile math
+let vx = dx / T;
+let vy = (dy - 0.5 * g * T * T) / T;
+
+// add a tiny imperfection so it’s not guaranteed
+vx += (Math.random() * 2 - 1) * 35;
+vy += (Math.random() * 2 - 1) * 35;
+
+L1.shots.push({
+  x: startX,
+  y: startY,
+  vx,
+  vy,
+  r: 4,
+  alive: true,
+});
 
     SFX.throw();
   }
@@ -395,7 +411,7 @@
     const g = 1100;
 
     // cup gently wiggles a bit (small “hard” feeling)
-    L1.cup.y = 46 + Math.round(Math.sin(state.t * 2.2) * 4);
+    L1.cup.y = 96 + Math.round(Math.sin(state.t * 2.2) * 4);
 
     for (const b of L1.shots) {
       if (!b.alive) continue;
@@ -404,7 +420,11 @@
       b.y += b.vy * dt;
 
       // hit cup?
-      if (rectsOverlap(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2, L1.cup.x, L1.cup.y, L1.cup.w, L1.cup.h)) {
+      const pad = 6;
+if (rectsOverlap(
+  b.x - b.r, b.y - b.r, b.r * 2, b.r * 2,
+  L1.cup.x - pad, L1.cup.y - pad, L1.cup.w + pad * 2, L1.cup.h + pad * 2
+)) {
         b.alive = false;
         L1.shotHits += 1;
         L1.score += 250;
@@ -425,8 +445,8 @@
 
     L1.timeInLevel += dt;
 
-    // Transition: after ~22 seconds of Carrot phase, go to Impossible Shot
-    if (L1.phase === "carrot" && L1.timeInLevel > 22) {
+    // Transition: after ~40 seconds of Carrot phase, go to Impossible Shot
+    if (L1.phase === "carrot" && L1.timeInLevel > 40) {
       initShotPhase();
     }
 
