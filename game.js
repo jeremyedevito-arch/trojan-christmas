@@ -34,22 +34,33 @@
   const keys = new Set();
   const touch = { left: false, right: false };
 
+  // Better mobile sizing: use VisualViewport if available (helps landscape)
+  function getViewportSize() {
+    const vv = window.visualViewport;
+    const w = vv ? Math.round(vv.width) : window.innerWidth;
+    const h = vv ? Math.round(vv.height) : window.innerHeight;
+    return { w, h };
+  }
+
   function resize() {
+    const { w, h } = getViewportSize();
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-    canvas.width = Math.floor(window.innerWidth * dpr);
-    canvas.height = Math.floor(window.innerHeight * dpr);
-    canvas.style.width = window.innerWidth + "px";
-    canvas.style.height = window.innerHeight + "px";
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    state.w = window.innerWidth;
-    state.h = window.innerHeight;
+    state.w = w;
+    state.h = h;
   }
   window.addEventListener("resize", resize);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", resize);
   resize();
 
   // -------------------- Web Audio SFX (no files) --------------------
   let audioCtx = null;
+  let hum = null;
 
   function ensureAudio() {
     if (state.muted) return;
@@ -61,6 +72,8 @@
     if (audioCtx && audioCtx.state === "suspended") {
       audioCtx.resume().catch(() => {});
     }
+    // Start hum once audio is running
+    if (audioCtx && audioCtx.state === "running") ensureHum();
   }
 
   function beep({ type="square", f0=440, f1=null, dur=0.08, gain=0.06 }) {
@@ -100,10 +113,7 @@
     const bufferSize = Math.floor(audioCtx.sampleRate * dur);
     const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
     const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      // quick “pfft”
-      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
-    }
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
 
     const src = audioCtx.createBufferSource();
     src.buffer = buffer;
@@ -120,6 +130,79 @@
     src.stop(t1 + 0.01);
   }
 
+  // Subtle “hallway hum” (two low tones + very soft filtered noise)
+  function ensureHum() {
+    if (state.muted) { stopHum(); return; }
+    if (!audioCtx || audioCtx.state !== "running") return;
+    if (hum) return;
+
+    const master = audioCtx.createGain();
+    master.gain.value = 0.020; // subtle
+
+    const osc1 = audioCtx.createOscillator();
+    osc1.type = "sine";
+    osc1.frequency.value = 52;
+
+    const osc2 = audioCtx.createOscillator();
+    osc2.type = "triangle";
+    osc2.frequency.value = 104;
+
+    // gentle movement so it feels alive
+    const lfo = audioCtx.createOscillator();
+    lfo.type = "sine";
+    lfo.frequency.value = 0.18;
+    const lfoGain = audioCtx.createGain();
+    lfoGain.gain.value = 6;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc2.frequency);
+
+    // soft air/vent noise
+    const noiseDur = 2.0;
+    const bufferSize = Math.floor(audioCtx.sampleRate * noiseDur);
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * 0.25;
+
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 420;
+
+    const noiseGain = audioCtx.createGain();
+    noiseGain.gain.value = 0.012;
+
+    osc1.connect(master);
+    osc2.connect(master);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(master);
+
+    master.connect(audioCtx.destination);
+
+    osc1.start();
+    osc2.start();
+    lfo.start();
+    noise.start();
+
+    hum = { master, osc1, osc2, lfo, noise };
+  }
+
+  function stopHum() {
+    if (!hum) return;
+    try {
+      hum.master.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.03);
+      hum.osc1.stop(audioCtx.currentTime + 0.08);
+      hum.osc2.stop(audioCtx.currentTime + 0.08);
+      hum.lfo.stop(audioCtx.currentTime + 0.08);
+      hum.noise.stop(audioCtx.currentTime + 0.08);
+    } catch {}
+    hum = null;
+  }
+
   // SFX “presets”
   const SFX = {
     tick:   () => beep({ type:"square", f0:740, f1:640, dur:0.04, gain:0.04 }),
@@ -134,11 +217,7 @@
   };
 
   // -------------------- Level 1: movement + Carrot in a Box --------------------
-  const PHYS = {
-    gravity: 1800,
-    jumpV: 640,
-    moveSpeed: 260,
-  };
+  const PHYS = { gravity: 1800, jumpV: 640, moveSpeed: 260 };
 
   const player = {
     x: 120, y: 0,
@@ -161,9 +240,7 @@
     hare: { active: false, x: 0, t: 0 },
   };
 
-  function clamp(v, lo, hi) {
-    return Math.max(lo, Math.min(hi, v));
-  }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
   function resetLevel1() {
     L1.camX = 0;
@@ -208,13 +285,8 @@
     if (box.opened) return;
     box.opened = true;
 
-    // sound on open
-    if (box.decoy) {
-      SFX.decoy();
-      return;
-    } else {
-      SFX.open();
-    }
+    if (box.decoy) { SFX.decoy(); return; }
+    SFX.open();
 
     if (box.hasCarrot) {
       L1.carrots.push({
@@ -520,7 +592,6 @@
 
   // -------------------- Keyboard controls --------------------
   window.addEventListener("keydown", (e) => {
-    // unlock audio on first real interaction
     ensureAudio();
 
     keys.add(e.key);
@@ -639,11 +710,29 @@
 
   // -------------------- HUD: mute button + toast --------------------
   const muteBtn = document.getElementById("muteBtn");
+
+  // Move button so it never blocks the HUD text
+  (function placeMuteButton() {
+    muteBtn.style.position = "fixed";
+    muteBtn.style.left = "12px";
+    muteBtn.style.bottom = "12px";
+    muteBtn.style.top = "auto";
+    muteBtn.style.right = "auto";
+    muteBtn.style.zIndex = "9999";
+    // Optional: keep it readable
+    muteBtn.style.opacity = "0.92";
+  })();
+
   muteBtn.addEventListener("click", () => {
     state.muted = !state.muted;
     muteBtn.textContent = state.muted ? "Sound: Off" : "Sound: On";
     toast(state.muted ? "Muted" : "Sound on");
-    if (!state.muted) ensureAudio();
+    if (!state.muted) {
+      ensureAudio();
+      ensureHum();
+    } else {
+      stopHum();
+    }
   });
 
   function toast(msg) {
