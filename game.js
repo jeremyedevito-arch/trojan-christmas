@@ -1,5 +1,44 @@
 (() => {
-  const canvas = document.getElementById("game");
+  const canvas = document.getElementById("game"); function setTouchFromX(x) {
+  touch.left = x < state.w * 0.33;
+  touch.right = x > state.w * 0.66;
+}
+
+canvas.addEventListener("pointerdown", (e) => {
+  if (state.screen !== "level1") return;
+
+  const x = e.clientX;
+
+  // Middle third = jump
+  if (x >= state.w * 0.33 && x <= state.w * 0.66) {
+    if (player.onGround) {
+      player.vy = -PHYS.jumpV;
+      player.onGround = false;
+    }
+    touch.left = false;
+    touch.right = false;
+    return;
+  }
+
+  // Left / right third = movement (hold)
+  setTouchFromX(x);
+});
+
+canvas.addEventListener("pointermove", (e) => {
+  if (state.screen !== "level1") return;
+  // If user is holding down, allow sliding thumb to switch sides
+  if (e.buttons !== 1) return;
+  setTouchFromX(e.clientX);
+});
+
+function clearTouch() {
+  touch.left = false;
+  touch.right = false;
+}
+canvas.addEventListener("pointerup", clearTouch);
+canvas.addEventListener("pointercancel", clearTouch);
+canvas.addEventListener("pointerleave", clearTouch);
+
   const ctx = canvas.getContext("2d");
 
   const state = {
@@ -73,7 +112,7 @@ function resetLevel1() {
   resize();
 
   // Input
-  const keys = new Set();
+  const keys = new Set(); const touch = { left: false, right: false };
   window.addEventListener("keydown", (e) => {
     keys.add(e.key);
     // Level 1 controls
@@ -187,8 +226,8 @@ if (state.screen === "level1") {
   L1.timeInLevel += dt;
 
   // Movement input (keyboard)
-  const left = keys.has("ArrowLeft") || keys.has("a") || keys.has("A");
-  const right = keys.has("ArrowRight") || keys.has("d") || keys.has("D");
+  const left = touch.left || keys.has("ArrowLeft") || keys.has("a") || keys.has("A");
+  const right = touch.right || keys.has("ArrowRight") || keys.has("d") || keys.has("D");
   player.vx = 0;
   if (left) player.vx -= PHYS.moveSpeed;
   if (right) player.vx += PHYS.moveSpeed;
