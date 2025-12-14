@@ -62,6 +62,10 @@ const L1 = {
   score: 0,
   phase: "carrot",     // later: carrot -> shot -> colouring
   timeInLevel: 0,
+  boxes: [],
+carrots: [],
+nextBoxX: 360,
+hare: { active: false, x: 0, t: 0 },
 };
 
 const player = {
@@ -84,7 +88,7 @@ function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function resetLevel1() {
+function resetLevel1() { 
   L1.camX = 0;
   L1.score = 0;
   L1.phase = "carrot";
@@ -95,7 +99,93 @@ function resetLevel1() {
   player.vx = 0;
   player.vy = 0;
   player.onGround = false;
+
+    // Phase A init
+  L1.boxes = [];
+  L1.carrots = [];
+  L1.nextBoxX = 360;
+  L1.hare = { active: false, x: 0, t: 0 };
 }
+  function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+function spawnBoxesAhead(floorY) {
+  const spawnToX = L1.camX + state.w + 240;
+
+  while (L1.nextBoxX < spawnToX) {
+    const w = 46 + Math.floor(Math.random() * 18);
+    const h = 30 + Math.floor(Math.random() * 10);
+    const x = L1.nextBoxX;
+    const y = floorY - h;
+
+    const decoy = Math.random() < 0.20;         // 20% decoy
+    const hasCarrot = !decoy && Math.random() < 0.30; // 30% carrot chance (if not decoy)
+
+    L1.boxes.push({
+      x, y, w, h,
+      opened: false,
+      decoy,
+      hasCarrot,
+    });
+
+    // spacing between boxes
+    L1.nextBoxX += 140 + Math.floor(Math.random() * 140);
+  }
+}
+
+function tryOpenBox(box) {
+  if (box.opened) return;
+  box.opened = true;
+
+  // Decoy: harmless "poof"
+  if (box.decoy) return;
+
+  // Carrot pops up if present
+  if (box.hasCarrot) {
+    L1.carrots.push({
+      x: box.x + box.w / 2 - 8,
+      y: box.y - 10,
+      w: 16,
+      h: 10,
+      vy: -420,
+      alive: true,
+    });
+    box.hasCarrot = false;
+  }
+}
+
+function updateCarrots(dt, floorY) {
+  for (const c of L1.carrots) {
+    if (!c.alive) continue;
+    c.vy += 1400 * dt;
+    c.y += c.vy * dt;
+    if (c.y > floorY + 200) c.alive = false;
+
+    // collect
+    if (rectsOverlap(player.x, player.y, player.w, player.h, c.x - L1.camX, c.y, c.w, c.h)) {
+      c.alive = false;
+      L1.score += 100;
+    }
+  }
+  // prune
+  L1.carrots = L1.carrots.filter(c => c.alive);
+}
+
+function updateMarchHare(dt, floorY) {
+  // Rare visual-only gag
+  if (!L1.hare.active && Math.random() < 0.006) {
+    L1.hare.active = true;
+    L1.hare.t = 0;
+    L1.hare.x = L1.camX + state.w + 40;
+  }
+  if (L1.hare.active) {
+    L1.hare.t += dt;
+    L1.hare.x -= 520 * dt;
+    if (L1.hare.t > 1.2) L1.hare.active = false;
+  }
+}
+
 // -------------------------------------------------------------------
 
   function resize() {
