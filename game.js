@@ -41,12 +41,97 @@
     canvas.style.width = window.innerWidth + "px";
     canvas.style.height = window.innerHeight + "px";
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.imageSmoothingEnabled = false; // pixel crisp
+    ctx.imageSmoothingEnabled = false;
     state.w = window.innerWidth;
     state.h = window.innerHeight;
   }
   window.addEventListener("resize", resize);
   resize();
+
+  // -------------------- Web Audio SFX (no files) --------------------
+  let audioCtx = null;
+
+  function ensureAudio() {
+    if (state.muted) return;
+    if (!audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      audioCtx = new Ctx();
+    }
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume().catch(() => {});
+    }
+  }
+
+  function beep({ type="square", f0=440, f1=null, dur=0.08, gain=0.06 }) {
+    if (state.muted) return;
+    ensureAudio();
+    if (!audioCtx || audioCtx.state !== "running") return;
+
+    const t0 = audioCtx.currentTime;
+    const t1 = t0 + dur;
+
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t0);
+    if (f1 !== null) o.frequency.linearRampToValueAtTime(f1, t1);
+
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gain, t0 + Math.min(0.02, dur * 0.4));
+    g.gain.exponentialRampToValueAtTime(0.0001, t1);
+
+    o.connect(g);
+    g.connect(audioCtx.destination);
+
+    o.start(t0);
+    o.stop(t1 + 0.01);
+  }
+
+  function noisePop({ dur=0.07, gain=0.045 }) {
+    if (state.muted) return;
+    ensureAudio();
+    if (!audioCtx || audioCtx.state !== "running") return;
+
+    const t0 = audioCtx.currentTime;
+    const t1 = t0 + dur;
+
+    const bufferSize = Math.floor(audioCtx.sampleRate * dur);
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      // quick “pfft”
+      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    }
+
+    const src = audioCtx.createBufferSource();
+    src.buffer = buffer;
+
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gain, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t1);
+
+    src.connect(g);
+    g.connect(audioCtx.destination);
+
+    src.start(t0);
+    src.stop(t1 + 0.01);
+  }
+
+  // SFX “presets”
+  const SFX = {
+    tick:   () => beep({ type:"square", f0:740, f1:640, dur:0.04, gain:0.04 }),
+    start:  () => beep({ type:"triangle", f0:520, f1:780, dur:0.09, gain:0.06 }),
+    jump:   () => beep({ type:"square", f0:520, f1:880, dur:0.07, gain:0.06 }),
+    open:   () => beep({ type:"sawtooth", f0:180, f1:120, dur:0.09, gain:0.05 }),
+    decoy:  () => noisePop({ dur:0.06, gain:0.04 }),
+    collect:() => {
+      beep({ type:"triangle", f0:880, f1:1320, dur:0.07, gain:0.06 });
+      setTimeout(() => beep({ type:"triangle", f0:1320, f1:1760, dur:0.05, gain:0.05 }), 30);
+    },
+  };
 
   // -------------------- Level 1: movement + Carrot in a Box --------------------
   const PHYS = {
@@ -60,7 +145,7 @@
     w: 28, h: 34,
     vx: 0, vy: 0,
     onGround: false,
-    facing: 1,            // 1 = right, -1 = left
+    facing: 1,
     style: CHAR_STYLE.Holli,
   };
 
@@ -105,7 +190,6 @@
 
   function spawnBoxesAhead(floorY) {
     const spawnToX = L1.camX + state.w + 240;
-
     while (L1.nextBoxX < spawnToX) {
       const w = 52 + Math.floor(Math.random() * 18);
       const h = 32 + Math.floor(Math.random() * 12);
@@ -116,7 +200,6 @@
       const hasCarrot = !decoy && Math.random() < 0.30;
 
       L1.boxes.push({ x, y, w, h, opened: false, decoy, hasCarrot });
-
       L1.nextBoxX += 140 + Math.floor(Math.random() * 140);
     }
   }
@@ -125,7 +208,13 @@
     if (box.opened) return;
     box.opened = true;
 
-    if (box.decoy) return;
+    // sound on open
+    if (box.decoy) {
+      SFX.decoy();
+      return;
+    } else {
+      SFX.open();
+    }
 
     if (box.hasCarrot) {
       L1.carrots.push({
@@ -152,6 +241,7 @@
       if (rectsOverlap(player.x, player.y, player.w, player.h, cx, c.y, c.w, c.h)) {
         c.alive = false;
         L1.score += 100;
+        SFX.collect();
       }
     }
     L1.carrots = L1.carrots.filter(c => c.alive);
@@ -207,7 +297,7 @@
 
       for (const box of L1.boxes) {
         const sx = box.x - L1.camX;
-        if (sx < -140 || sx > state.w + 140) continue;
+        if (sx < -160 || sx > state.w + 160) continue;
 
         const falling = player.vy >= 0;
         const overlap = rectsOverlap(player.x, player.y, player.w, player.h, sx, box.y, box.w, box.h);
@@ -229,7 +319,7 @@
 
   // -------------------- Drawing helpers (pixel arcade) --------------------
   function clear() {
-    ctx.fillStyle = "#06101A"; // deep navy (bright arcade contrast)
+    ctx.fillStyle = "#06101A";
     ctx.fillRect(0, 0, state.w, state.h);
   }
 
@@ -249,48 +339,35 @@
   }
 
   function drawCarrot(cx, y, s = 1) {
-    // cx,y are top-left screen coords
-    // Simple pixel carrot: green top + orange body + tiny highlight
     const x = Math.round(cx);
     const yy = Math.round(y);
-
-    // greens
     drawPixelRect(x + 6*s, yy + 0*s, 4*s, 2*s, "#3CFF74");
     drawPixelRect(x + 5*s, yy + 2*s, 6*s, 2*s, "#2FE35F");
-    // orange body
     drawPixelRect(x + 4*s, yy + 4*s, 8*s, 2*s, "#FF8A2A");
     drawPixelRect(x + 5*s, yy + 6*s, 6*s, 2*s, "#FF7A1A");
     drawPixelRect(x + 6*s, yy + 8*s, 4*s, 2*s, "#FF6A0A");
     drawPixelRect(x + 7*s, yy +10*s, 2*s, 2*s, "#FF5A00");
-    // highlight
     drawPixelRect(x + 6*s, yy + 5*s, 1*s, 4*s, "#FFD6A8");
   }
 
   function drawCrate(x, y, w, h, opened, decoy) {
-    // Stylized crate using two tones + simple slats
     const base = opened ? "rgba(255,214,120,0.25)" : "#FFB74A";
     const dark = opened ? "rgba(120,70,10,0.20)" : "#B86A12";
     const edge = opened ? "rgba(0,0,0,0.18)" : "rgba(0,0,0,0.28)";
 
     drawPixelRect(x, y, w, h, base);
-    // border
     ctx.strokeStyle = edge;
     ctx.lineWidth = 2;
     ctx.strokeRect(Math.round(x)+1, Math.round(y)+1, Math.round(w)-2, Math.round(h)-2);
 
-    // slats
     const slatCount = 3;
     for (let i = 1; i <= slatCount; i++) {
       const yy = y + (h * i) / (slatCount + 1);
       drawPixelRect(x + 6, yy - 2, w - 12, 3, dark);
     }
 
-    // opened look (a “gap”)
-    if (opened) {
-      drawPixelRect(x + 6, y + 6, w - 12, 5, "rgba(0,0,0,0.18)");
-    }
+    if (opened) drawPixelRect(x + 6, y + 6, w - 12, 5, "rgba(0,0,0,0.18)");
 
-    // decoy marker (very subtle)
     if (opened && decoy) {
       drawPixelRect(x + w/2 - 10, y + h/2 - 2, 20, 4, "rgba(0,0,0,0.25)");
       drawPixelRect(x + w/2 - 2, y + h/2 - 10, 4, 20, "rgba(0,0,0,0.10)");
@@ -298,7 +375,6 @@
   }
 
   function drawChibiPlayer() {
-    // Tiny walk bob when moving
     const speedMag = Math.min(1, Math.abs(player.vx) / PHYS.moveSpeed);
     const bob = Math.round(Math.sin(state.t * 14) * 2 * speedMag);
     const px = Math.round(player.x);
@@ -306,7 +382,6 @@
 
     const st = player.style || CHAR_STYLE.Holli;
 
-    // proportions
     const headW = 16, headH = 14;
     const bodyW = 16, bodyH = 12;
     const legW = 6, legH = 8;
@@ -316,21 +391,13 @@
     const bodyY = headY + headH;
     const legY  = bodyY + bodyH;
 
-    // shadow
     drawPixelRect(px + 6, py + player.h - 3, player.w - 12, 3, "rgba(0,0,0,0.25)");
 
-    // head (skin)
     drawPixelRect(cx, headY, headW, headH, st.skin);
-
-    // hair (top + fringe depending on facing)
     drawPixelRect(cx, headY, headW, 5, st.hair);
-    if (player.facing === 1) {
-      drawPixelRect(cx + 11, headY + 5, 4, 4, st.hair);
-    } else {
-      drawPixelRect(cx + 1, headY + 5, 4, 4, st.hair);
-    }
+    if (player.facing === 1) drawPixelRect(cx + 11, headY + 5, 4, 4, st.hair);
+    else drawPixelRect(cx + 1, headY + 5, 4, 4, st.hair);
 
-    // eyes (simple)
     const eyeY = headY + 7;
     if (player.facing === 1) {
       drawPixelRect(cx + 9, eyeY, 2, 2, "#1A1A1A");
@@ -340,19 +407,14 @@
       drawPixelRect(cx + 5, eyeY, 2, 2, "#1A1A1A");
     }
 
-    // body (shirt)
     const bx = px + Math.round((player.w - bodyW) / 2);
     drawPixelRect(bx, bodyY, bodyW, bodyH, st.shirt);
-
-    // pants
     drawPixelRect(bx, bodyY + bodyH - 3, bodyW, 3, st.pants);
 
-    // legs (little stepping animation)
     const step = Math.round(Math.sin(state.t * 14) * 2 * speedMag);
     drawPixelRect(bx + 2, legY + Math.max(0, -step), legW, legH + Math.min(0, step), st.pants);
     drawPixelRect(bx + bodyW - 2 - legW, legY + Math.max(0, step), legW, legH + Math.min(0, -step), st.pants);
 
-    // arms
     drawPixelRect(bx - 2, bodyY + 3, 3, 6, st.skin);
     drawPixelRect(bx + bodyW - 1, bodyY + 3, 3, 6, st.skin);
   }
@@ -375,19 +437,14 @@
       const x = startX + i * spacing;
       const isSel = i === state.selected;
 
-      // portrait frame
       drawPixelRect(x - 24, midY - 26, 48, 52, isSel ? "#FFFFFF" : "rgba(255,255,255,0.30)");
       drawPixelRect(x - 22, midY - 24, 44, 48, "rgba(0,0,0,0.45)");
 
-      // tiny chibi preview
       const name = state.chars[i].name;
       const st = CHAR_STYLE[name] || CHAR_STYLE.Holli;
-      // head
       drawPixelRect(x - 10, midY - 16, 20, 16, st.skin);
       drawPixelRect(x - 10, midY - 16, 20, 6, st.hair);
-      // shirt
       drawPixelRect(x - 10, midY, 20, 14, st.shirt);
-      // pants
       drawPixelRect(x - 10, midY + 10, 20, 4, st.pants);
 
       ctx.fillStyle = "#FFFFFF";
@@ -405,7 +462,6 @@
   function drawLevel1() {
     const floorY = state.h * 0.78;
 
-    // Background neon "posters"
     for (let i = 0; i < 40; i++) {
       const x = ((i * 220) - (L1.camX % 220)) - 60;
       const y = 60 + (i % 6) * 70;
@@ -413,12 +469,9 @@
       drawPixelRect(x + 14, y + 8, 6, 22, "rgba(255,120,220,0.10)");
     }
 
-    // Floor
     drawPixelRect(0, floorY, state.w, state.h - floorY, "rgba(255,255,255,0.10)");
-    // floor stripe
     drawPixelRect(0, floorY + 18, state.w, 4, "rgba(255,255,255,0.14)");
 
-    // Lockers parallax strip
     const lockerY = floorY - 130;
     for (let i = 0; i < 20; i++) {
       const x = (i * 140) - (L1.camX * 0.6 % 140) - 20;
@@ -427,7 +480,6 @@
       drawPixelRect(x + 6, lockerY + 60, 80, 4, "rgba(255,255,255,0.06)");
     }
 
-    // Boxes + carrots
     if (L1.phase === "carrot") {
       for (const box of L1.boxes) {
         const x = box.x - L1.camX;
@@ -435,7 +487,6 @@
         drawCrate(x, box.y, box.w, box.h, box.opened, box.decoy);
       }
 
-      // March Hare silhouette
       if (L1.hare.active) {
         const hx = L1.hare.x - L1.camX;
         const hy = floorY - 118;
@@ -449,10 +500,8 @@
       }
     }
 
-    // Player
     drawChibiPlayer();
 
-    // HUD
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.font = "700 16px system-ui, Arial";
     ctx.textAlign = "left";
@@ -471,20 +520,25 @@
 
   // -------------------- Keyboard controls --------------------
   window.addEventListener("keydown", (e) => {
+    // unlock audio on first real interaction
+    ensureAudio();
+
     keys.add(e.key);
 
     if (state.screen === "title" && (e.key === "Enter" || e.key === " ")) {
       state.screen = "select";
+      SFX.start();
     }
 
     if (state.screen === "select") {
-      if (e.key === "ArrowLeft") state.selected = (state.selected + state.chars.length - 1) % state.chars.length;
-      if (e.key === "ArrowRight") state.selected = (state.selected + 1) % state.chars.length;
+      if (e.key === "ArrowLeft") { state.selected = (state.selected + state.chars.length - 1) % state.chars.length; SFX.tick(); }
+      if (e.key === "ArrowRight") { state.selected = (state.selected + 1) % state.chars.length; SFX.tick(); }
       if (e.key === "Enter" || e.key === " ") {
         const name = state.chars[state.selected].name;
         player.style = CHAR_STYLE[name] || CHAR_STYLE.Holli;
         resetLevel1();
         state.screen = "level1";
+        SFX.start();
       }
     }
 
@@ -492,13 +546,16 @@
       if ((e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") && player.onGround) {
         player.vy = -PHYS.jumpV;
         player.onGround = false;
+        SFX.jump();
       }
       if (e.key === "Escape") {
         state.screen = "select";
         resetLevel1();
+        SFX.tick();
       }
       if (e.key === "r" || e.key === "R") {
         resetLevel1();
+        SFX.tick();
       }
     }
   });
@@ -506,32 +563,31 @@
   window.addEventListener("keyup", (e) => keys.delete(e.key));
 
   // -------------------- Touch controls --------------------
-  function clearTouch() {
-    touch.left = false;
-    touch.right = false;
-  }
-
+  function clearTouch() { touch.left = false; touch.right = false; }
   function setTouchFromX(x) {
     touch.left = x < state.w * 0.33;
     touch.right = x > state.w * 0.66;
   }
 
   canvas.addEventListener("pointerdown", (e) => {
+    ensureAudio();
     const x = e.clientX;
 
     if (state.screen === "title") {
       state.screen = "select";
+      SFX.start();
       return;
     }
 
     if (state.screen === "select") {
-      if (x < state.w * 0.33) state.selected = (state.selected + state.chars.length - 1) % state.chars.length;
-      else if (x > state.w * 0.66) state.selected = (state.selected + 1) % state.chars.length;
+      if (x < state.w * 0.33) { state.selected = (state.selected + state.chars.length - 1) % state.chars.length; SFX.tick(); }
+      else if (x > state.w * 0.66) { state.selected = (state.selected + 1) % state.chars.length; SFX.tick(); }
       else {
         const name = state.chars[state.selected].name;
         player.style = CHAR_STYLE[name] || CHAR_STYLE.Holli;
         resetLevel1();
         state.screen = "level1";
+        SFX.start();
       }
       return;
     }
@@ -541,6 +597,7 @@
         if (player.onGround) {
           player.vy = -PHYS.jumpV;
           player.onGround = false;
+          SFX.jump();
         }
         clearTouch();
       } else {
@@ -586,6 +643,7 @@
     state.muted = !state.muted;
     muteBtn.textContent = state.muted ? "Sound: Off" : "Sound: On";
     toast(state.muted ? "Muted" : "Sound on");
+    if (!state.muted) ensureAudio();
   });
 
   function toast(msg) {
