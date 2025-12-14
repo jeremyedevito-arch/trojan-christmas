@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>A Very Trojan Christmas</title>
+  <style>
+    html, body { margin:0; padding:0; height:100%; background:#000; color:#fff; font-family:system-ui, Arial; }
+    .wrap { min-height:100%; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:16px; text-align:center; padding:24px; }
+    .btn { padding:12px 16px; border:1px solid #fff; background:transparent; color:#fff; border-radius:10px; font-size:16px; }
+    .hint { opacity:0.8; font-size:14px; }
+    img { max-width:240px; width:55vw; height:auto; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 style="margin:0;">A Very Trojan Christmas</h1>
+    <div class="hint">Test page is live. Game files coming next.</div>
+
+    <!-- We'll swap this for the real end-screen later -->
+    <img src="assets/HTHS_logo.png" alt="HTHS Logo" />
+
+    <button class="btn" onclick="alert('Next: upload game files (game.js, assets, audio).');">
+      Start (test)
+    </button>
+
+    <div class="hint">If you can see this page, GitHub Pages is working.</div>
+  </div>
+</body>
+</html>
