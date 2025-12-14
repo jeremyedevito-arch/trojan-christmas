@@ -21,13 +21,16 @@
   };
 
   // Fixed internal game resolution (letterboxed to fit any phone orientation)
-  const VIEW = {
-    gw: 960,   // game width in "logical" pixels
-    gh: 540,   // game height (16:9)
-    scale: 1,
-    ox: 0,
-    oy: 0,
-  };
+  const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 520;
+
+// Smaller internal resolution = bigger-looking game on phones (no logic changes)
+const VIEW = {
+  gw: isPhone ? 560 : 960,
+  gh: isPhone ? 315 : 540, // keep 16:9
+  scale: 1,
+  ox: 0,
+  oy: 0,
+};
 
   function computeView() {
     VIEW.scale = Math.min(state.w / VIEW.gw, state.h / VIEW.gh);
