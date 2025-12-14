@@ -482,42 +482,46 @@
 
   // -------------------- Phase 3: Christmas Colouring --------------------
   function initColouringPhase() {
-    L1.phase = "colouring";
-    L1.phaseStartT = L1.timeInLevel;
-    L1.levelDone = false;
+  L1.phase = "colouring";
+  L1.phaseStartT = L1.timeInLevel;
+  L1.levelDone = false;
 
-    const cols = 12;
-    const rows = 7;
-    const cell = 18;
+  const floorY = VIEW.gh * 0.78;
 
-    const pageW = cols * cell;
-    const pageH = rows * cell;
+  // A “colouring page” made of fillable squares ON THE FLOOR
+  const cols = 12;
+  const rows = 6;
+  const cell = 18;
 
-    const startX = Math.round(VIEW.gw * 0.58 - pageW / 2);
-    const startY = Math.round(VIEW.gh * 0.46 - pageH / 2);
+  const pageW = cols * cell;
+  const pageH = rows * cell;
 
-    const zones = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const isBorder = r === 0 || r === rows - 1 || c === 0 || c === cols - 1;
-        if (isBorder && Math.random() < 0.45) continue;
+  // Put it low enough to step on, and within the player's movement band
+  const startX = Math.round(VIEW.gw * 0.40 - pageW / 2);
+  const startY = Math.round(floorY - pageH - 10);
 
-        zones.push({
-          x: startX + c * cell,
-          y: startY + r * cell,
-          w: cell - 2,
-          h: cell - 2,
-          filled: false,
-        });
-      }
+  const zones = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const isBorder = r === 0 || r === rows - 1 || c === 0 || c === cols - 1;
+      if (isBorder && Math.random() < 0.35) continue;
+
+      zones.push({
+        x: startX + c * cell,
+        y: startY + r * cell,
+        w: cell - 2,
+        h: cell - 2,
+        filled: false,
+      });
     }
-
-    L1.colouring.zones = zones;
-    L1.colouring.progress = 0;
-    L1.colouring.target = Math.max(18, Math.floor(zones.length * 0.75));
-    L1.colouring.done = false;
   }
 
+  L1.colouring.zones = zones;
+  L1.colouring.progress = 0;
+  L1.colouring.target = Math.max(16, Math.floor(zones.length * 0.70)); // slightly easier since it's on the floor
+  L1.colouring.done = false;
+}
+  
   // -------------------- Update --------------------
   function updateLevel1(dt) {
     const floorY = VIEW.gh * 0.78;
