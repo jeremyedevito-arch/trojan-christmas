@@ -366,46 +366,71 @@
   }
 
   function fireShot() {
-    if (L1.phase !== "shot") return;
-    if (L1.shotCooldown > 0) return;
+  if (L1.phase !== "shot") return;
+  if (L1.shotCooldown > 0) return;
 
-    L1.shotAttempts += 1;
-    L1.shotCooldown = 0.28;
+  L1.shotAttempts += 1;
+  L1.shotCooldown = 0.28;
 
-    // Spawn ball from player (screen coords)
-    const startX = player.x + player.w - 6;
-    const startY = player.y + 10;
+  const startX = player.x + player.w - 6;
+  const startY = player.y + 10;
 
-    // Aim toward the cup (still a little "imperfect")
-const targetX = L1.cup.x + L1.cup.w * 0.5;
-const targetY = L1.cup.y + L1.cup.h * 0.6;
+  // Target = center-ish of the cup
+  const targetX = L1.cup.x + L1.cup.w * 0.5;
+  const targetY = L1.cup.y + L1.cup.h * 0.6;
 
-const dx = targetX - startX;
-const dy = targetY - startY;
+  const dx = targetX - startX;           // + = cup is to the right
+  const g = 1100;                        // must match updateShots gravity
 
-// pick a flight time that feels good
-const T = 0.72;       // seconds (tweakable)
-const g = 1100;       // must match updateShots gravity
+  // -------------------------------------------------------
+  // SKILL SHOT MODEL
+  //
+  // 1) Player position matters:
+  //    - If you're too close, dx is small -> arc tends to go high/over.
+  //    - If you're too far, dx is large -> may fall short.
+  //
+  // 2) Randomness:
+  //    - Even from the "sweet spot", you'll hit about ~half the time.
+  // -------------------------------------------------------
 
-// basic projectile math
-let vx = dx / T;
-let vy = (dy - 0.5 * g * T * T) / T;
+  // Sweet spot distance (px): where it should be "about right"
+  const sweet = 380;
 
-// add a tiny imperfection so it’s not guaranteed
-vx += (Math.random() * 2 - 1) * 35;
-vy += (Math.random() * 2 - 1) * 35;
+  // How far from the sweet spot are we?
+  const err = dx - sweet;
 
-L1.shots.push({
-  x: startX,
-  y: startY,
-  vx,
-  vy,
-  r: 4,
-  alive: true,
-});
+  // Base horizontal speed:
+  // - scales with distance, but clamped so it isn't extreme on phone/desktop
+  let vx = clamp(520 + (dx - sweet) * 0.55, 360, 780);
 
-    SFX.throw();
-  }
+  // Base vertical speed:
+  // - tuned so "sweet spot" gives a reasonable arc toward the cup height
+  // - being too close (err negative) makes it a bit too strong (goes over)
+  // - being too far (err positive) makes it a bit too weak (falls short)
+  let vy = -680 - (err * 0.45);
+
+  // Random variation (the “half the time” factor)
+  // horizontal variance changes where it lands
+  vx += (Math.random() * 2 - 1) * 70;
+
+  // vertical variance changes over/under
+  vy += (Math.random() * 2 - 1) * 110;
+
+  // Keep it in sane bounds so it never becomes impossible
+  vx = clamp(vx, 340, 820);
+  vy = clamp(vy, -980, -420);
+
+  L1.shots.push({
+    x: startX,
+    y: startY,
+    vx,
+    vy,
+    r: 4,
+    alive: true,
+  });
+
+  SFX.throw();
+}
 
   function updateShots(dt) {
     const g = 1100;
