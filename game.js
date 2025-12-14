@@ -20,6 +20,16 @@
     ],
   };
 
+  // Bright arcade palette (simple, readable)
+  const CHAR_STYLE = {
+    Holli:  { skin:"#FFD2B5", hair:"#F2D16B", shirt:"#3EE6C1", pants:"#2B2B2B" },
+    Emily:  { skin:"#FFD2B5", hair:"#6B3B2A", shirt:"#FF5EA8", pants:"#2B2B2B" },
+    Devin:  { skin:"#FFD2B5", hair:"#5B3A2A", shirt:"#4DA3FF", pants:"#2B2B2B" },
+    Brandon:{ skin:"#FFD2B5", hair:"#A87A4D", shirt:"#8E6BFF", pants:"#2B2B2B" },
+    Colleen:{ skin:"#FFD2B5", hair:"#FF6B6B", shirt:"#FFD24D", pants:"#2B2B2B" },
+    Melissa:{ skin:"#FFD2B5", hair:"#6B3B2A", shirt:"#6BFF7A", pants:"#2B2B2B" },
+  };
+
   // Input
   const keys = new Set();
   const touch = { left: false, right: false };
@@ -31,6 +41,7 @@
     canvas.style.width = window.innerWidth + "px";
     canvas.style.height = window.innerHeight + "px";
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = false; // pixel crisp
     state.w = window.innerWidth;
     state.h = window.innerHeight;
   }
@@ -39,31 +50,29 @@
 
   // -------------------- Level 1: movement + Carrot in a Box --------------------
   const PHYS = {
-    gravity: 1800, // px/s^2
-    jumpV: 640, // px/s
-    moveSpeed: 260, // px/s
+    gravity: 1800,
+    jumpV: 640,
+    moveSpeed: 260,
   };
 
   const player = {
-    x: 120, // screen coords
-    y: 0,
-    w: 28,
-    h: 34,
-    vx: 0,
-    vy: 0,
+    x: 120, y: 0,
+    w: 28, h: 34,
+    vx: 0, vy: 0,
     onGround: false,
+    facing: 1,            // 1 = right, -1 = left
+    style: CHAR_STYLE.Holli,
   };
 
   const L1 = {
-    camX: 0, // world x of camera
+    camX: 0,
     speed: 220,
     score: 0,
     phase: "carrot",
     timeInLevel: 0,
-
-    boxes: [],      // world-x boxes
-    carrots: [],    // world-x carrots
-    nextBoxX: 360,  // next box spawn world x
+    boxes: [],
+    carrots: [],
+    nextBoxX: 360,
     hare: { active: false, x: 0, t: 0 },
   };
 
@@ -82,6 +91,7 @@
     player.vx = 0;
     player.vy = 0;
     player.onGround = false;
+    player.facing = 1;
 
     L1.boxes = [];
     L1.carrots = [];
@@ -97,20 +107,15 @@
     const spawnToX = L1.camX + state.w + 240;
 
     while (L1.nextBoxX < spawnToX) {
-      const w = 46 + Math.floor(Math.random() * 18);
-      const h = 30 + Math.floor(Math.random() * 10);
-      const x = L1.nextBoxX;     // world x
-      const y = floorY - h;      // screen y
+      const w = 52 + Math.floor(Math.random() * 18);
+      const h = 32 + Math.floor(Math.random() * 12);
+      const x = L1.nextBoxX;
+      const y = floorY - h;
 
-      const decoy = Math.random() < 0.20; // 20% decoy
-      const hasCarrot = !decoy && Math.random() < 0.30; // 30% carrot chance (if not decoy)
+      const decoy = Math.random() < 0.20;
+      const hasCarrot = !decoy && Math.random() < 0.30;
 
-      L1.boxes.push({
-        x, y, w, h,
-        opened: false,
-        decoy,
-        hasCarrot,
-      });
+      L1.boxes.push({ x, y, w, h, opened: false, decoy, hasCarrot });
 
       L1.nextBoxX += 140 + Math.floor(Math.random() * 140);
     }
@@ -124,10 +129,10 @@
 
     if (box.hasCarrot) {
       L1.carrots.push({
-        x: box.x + box.w / 2 - 8, // world x
-        y: box.y - 10,            // screen y
+        x: box.x + box.w / 2 - 8,
+        y: box.y - 10,
         w: 16,
-        h: 10,
+        h: 12,
         vy: -420,
         alive: true,
       });
@@ -141,11 +146,8 @@
 
       c.vy += 1400 * dt;
       c.y += c.vy * dt;
-
-      // fall off-screen
       if (c.y > floorY + 200) c.alive = false;
 
-      // collect: compare player (screen) with carrot (screen x derived from world x)
       const cx = c.x - L1.camX;
       if (rectsOverlap(player.x, player.y, player.w, player.h, cx, c.y, c.w, c.h)) {
         c.alive = false;
@@ -156,11 +158,10 @@
   }
 
   function updateMarchHare(dt) {
-    // Rare visual-only gag
     if (!L1.hare.active && Math.random() < 0.006) {
       L1.hare.active = true;
       L1.hare.t = 0;
-      L1.hare.x = L1.camX + state.w + 40; // world x
+      L1.hare.x = L1.camX + state.w + 40;
     }
     if (L1.hare.active) {
       L1.hare.t += dt;
@@ -172,11 +173,9 @@
   function updateLevel1(dt) {
     const floorY = state.h * 0.78;
 
-    // Auto-scroll camera
     L1.camX += L1.speed * dt;
     L1.timeInLevel += dt;
 
-    // Input: keyboard OR touch
     const left = touch.left || keys.has("ArrowLeft") || keys.has("a") || keys.has("A");
     const right = touch.right || keys.has("ArrowRight") || keys.has("d") || keys.has("D");
 
@@ -184,15 +183,15 @@
     if (left) player.vx -= PHYS.moveSpeed;
     if (right) player.vx += PHYS.moveSpeed;
 
-    // Keep player in a comfortable screen band
+    if (player.vx < -5) player.facing = -1;
+    else if (player.vx > 5) player.facing = 1;
+
     player.x = clamp(player.x + player.vx * dt, 60, state.w * 0.55);
 
-    // Physics integrate
     const prevY = player.y;
     player.vy += PHYS.gravity * dt;
     player.y += player.vy * dt;
 
-    // Floor
     if (player.y + player.h >= floorY) {
       player.y = floorY - player.h;
       player.vy = 0;
@@ -201,23 +200,17 @@
       player.onGround = false;
     }
 
-    // Phase A: Carrot in a Box
     if (L1.phase === "carrot") {
       spawnBoxesAhead(floorY);
       updateCarrots(dt, floorY);
       updateMarchHare(dt);
 
-      // Land on boxes to open them
       for (const box of L1.boxes) {
-        const sx = box.x - L1.camX; // box screen x
-
-        // skip far boxes
+        const sx = box.x - L1.camX;
         if (sx < -140 || sx > state.w + 140) continue;
 
         const falling = player.vy >= 0;
         const overlap = rectsOverlap(player.x, player.y, player.w, player.h, sx, box.y, box.w, box.h);
-
-        // "came from above" check using prevY
         const cameFromAbove = (prevY + player.h) <= (box.y + 8);
 
         if (falling && overlap && cameFromAbove) {
@@ -228,27 +221,140 @@
         }
       }
 
-      // prune old boxes behind camera
       L1.boxes = L1.boxes.filter(b => b.x > L1.camX - 320);
     }
 
-    // Tiny “movement score” baseline (will be replaced later)
     L1.score += Math.floor(L1.speed * dt * 0.05);
   }
 
+  // -------------------- Drawing helpers (pixel arcade) --------------------
   function clear() {
-    ctx.fillStyle = "#000";
+    ctx.fillStyle = "#06101A"; // deep navy (bright arcade contrast)
     ctx.fillRect(0, 0, state.w, state.h);
   }
 
   function drawCenteredText(text, y, size = 28, alpha = 1) {
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = "#fff";
-    ctx.font = `600 ${size}px system-ui, Arial`;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = `700 ${size}px system-ui, Arial`;
     ctx.textAlign = "center";
     ctx.fillText(text, state.w / 2, y);
     ctx.restore();
+  }
+
+  function drawPixelRect(x, y, w, h, c) {
+    ctx.fillStyle = c;
+    ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+  }
+
+  function drawCarrot(cx, y, s = 1) {
+    // cx,y are top-left screen coords
+    // Simple pixel carrot: green top + orange body + tiny highlight
+    const x = Math.round(cx);
+    const yy = Math.round(y);
+
+    // greens
+    drawPixelRect(x + 6*s, yy + 0*s, 4*s, 2*s, "#3CFF74");
+    drawPixelRect(x + 5*s, yy + 2*s, 6*s, 2*s, "#2FE35F");
+    // orange body
+    drawPixelRect(x + 4*s, yy + 4*s, 8*s, 2*s, "#FF8A2A");
+    drawPixelRect(x + 5*s, yy + 6*s, 6*s, 2*s, "#FF7A1A");
+    drawPixelRect(x + 6*s, yy + 8*s, 4*s, 2*s, "#FF6A0A");
+    drawPixelRect(x + 7*s, yy +10*s, 2*s, 2*s, "#FF5A00");
+    // highlight
+    drawPixelRect(x + 6*s, yy + 5*s, 1*s, 4*s, "#FFD6A8");
+  }
+
+  function drawCrate(x, y, w, h, opened, decoy) {
+    // Stylized crate using two tones + simple slats
+    const base = opened ? "rgba(255,214,120,0.25)" : "#FFB74A";
+    const dark = opened ? "rgba(120,70,10,0.20)" : "#B86A12";
+    const edge = opened ? "rgba(0,0,0,0.18)" : "rgba(0,0,0,0.28)";
+
+    drawPixelRect(x, y, w, h, base);
+    // border
+    ctx.strokeStyle = edge;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(Math.round(x)+1, Math.round(y)+1, Math.round(w)-2, Math.round(h)-2);
+
+    // slats
+    const slatCount = 3;
+    for (let i = 1; i <= slatCount; i++) {
+      const yy = y + (h * i) / (slatCount + 1);
+      drawPixelRect(x + 6, yy - 2, w - 12, 3, dark);
+    }
+
+    // opened look (a “gap”)
+    if (opened) {
+      drawPixelRect(x + 6, y + 6, w - 12, 5, "rgba(0,0,0,0.18)");
+    }
+
+    // decoy marker (very subtle)
+    if (opened && decoy) {
+      drawPixelRect(x + w/2 - 10, y + h/2 - 2, 20, 4, "rgba(0,0,0,0.25)");
+      drawPixelRect(x + w/2 - 2, y + h/2 - 10, 4, 20, "rgba(0,0,0,0.10)");
+    }
+  }
+
+  function drawChibiPlayer() {
+    // Tiny walk bob when moving
+    const speedMag = Math.min(1, Math.abs(player.vx) / PHYS.moveSpeed);
+    const bob = Math.round(Math.sin(state.t * 14) * 2 * speedMag);
+    const px = Math.round(player.x);
+    const py = Math.round(player.y + bob);
+
+    const st = player.style || CHAR_STYLE.Holli;
+
+    // proportions
+    const headW = 16, headH = 14;
+    const bodyW = 16, bodyH = 12;
+    const legW = 6, legH = 8;
+
+    const cx = px + Math.round((player.w - headW) / 2);
+    const headY = py + 2;
+    const bodyY = headY + headH;
+    const legY  = bodyY + bodyH;
+
+    // shadow
+    drawPixelRect(px + 6, py + player.h - 3, player.w - 12, 3, "rgba(0,0,0,0.25)");
+
+    // head (skin)
+    drawPixelRect(cx, headY, headW, headH, st.skin);
+
+    // hair (top + fringe depending on facing)
+    drawPixelRect(cx, headY, headW, 5, st.hair);
+    if (player.facing === 1) {
+      drawPixelRect(cx + 11, headY + 5, 4, 4, st.hair);
+    } else {
+      drawPixelRect(cx + 1, headY + 5, 4, 4, st.hair);
+    }
+
+    // eyes (simple)
+    const eyeY = headY + 7;
+    if (player.facing === 1) {
+      drawPixelRect(cx + 9, eyeY, 2, 2, "#1A1A1A");
+      drawPixelRect(cx + 12, eyeY, 2, 2, "#1A1A1A");
+    } else {
+      drawPixelRect(cx + 2, eyeY, 2, 2, "#1A1A1A");
+      drawPixelRect(cx + 5, eyeY, 2, 2, "#1A1A1A");
+    }
+
+    // body (shirt)
+    const bx = px + Math.round((player.w - bodyW) / 2);
+    drawPixelRect(bx, bodyY, bodyW, bodyH, st.shirt);
+
+    // pants
+    drawPixelRect(bx, bodyY + bodyH - 3, bodyW, 3, st.pants);
+
+    // legs (little stepping animation)
+    const step = Math.round(Math.sin(state.t * 14) * 2 * speedMag);
+    drawPixelRect(bx + 2, legY + Math.max(0, -step), legW, legH + Math.min(0, step), st.pants);
+    drawPixelRect(bx + bodyW - 2 - legW, legY + Math.max(0, step), legW, legH + Math.min(0, -step), st.pants);
+
+    // arms
+    drawPixelRect(bx - 2, bodyY + 3, 3, 6, st.skin);
+    drawPixelRect(bx + bodyW - 1, bodyY + 3, 3, 6, st.skin);
   }
 
   function drawTitle() {
@@ -269,13 +375,27 @@
       const x = startX + i * spacing;
       const isSel = i === state.selected;
 
-      ctx.fillStyle = isSel ? "#fff" : "rgba(255,255,255,0.35)";
-      ctx.fillRect(x - 22, midY - 22, 44, 44);
+      // portrait frame
+      drawPixelRect(x - 24, midY - 26, 48, 52, isSel ? "#FFFFFF" : "rgba(255,255,255,0.30)");
+      drawPixelRect(x - 22, midY - 24, 44, 48, "rgba(0,0,0,0.45)");
 
-      ctx.fillStyle = "#000";
-      ctx.font = "700 14px system-ui, Arial";
+      // tiny chibi preview
+      const name = state.chars[i].name;
+      const st = CHAR_STYLE[name] || CHAR_STYLE.Holli;
+      // head
+      drawPixelRect(x - 10, midY - 16, 20, 16, st.skin);
+      drawPixelRect(x - 10, midY - 16, 20, 6, st.hair);
+      // shirt
+      drawPixelRect(x - 10, midY, 20, 14, st.shirt);
+      // pants
+      drawPixelRect(x - 10, midY + 10, 20, 4, st.pants);
+
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "700 12px system-ui, Arial";
       ctx.textAlign = "center";
-      ctx.fillText(state.chars[i].name[0], x, midY + 5);
+      ctx.globalAlpha = isSel ? 1 : 0.75;
+      ctx.fillText(state.chars[i].name, x, midY + 44);
+      ctx.globalAlpha = 1;
     }
 
     drawCenteredText("← / → to choose • Enter to play", state.h * 0.85, 16, 0.85);
@@ -285,65 +405,56 @@
   function drawLevel1() {
     const floorY = state.h * 0.78;
 
-    // Background "posters" sliding by
-    ctx.fillStyle = "rgba(255,255,255,0.06)";
-    for (let i = 0; i < 60; i++) {
-      const x = ((i * 180) - (L1.camX % 180)) - 40;
-      const y = 60 + (i % 6) * 60;
-      ctx.fillRect(x, y, 6, 28);
+    // Background neon "posters"
+    for (let i = 0; i < 40; i++) {
+      const x = ((i * 220) - (L1.camX % 220)) - 60;
+      const y = 60 + (i % 6) * 70;
+      drawPixelRect(x, y, 10, 40, "rgba(120,220,255,0.10)");
+      drawPixelRect(x + 14, y + 8, 6, 22, "rgba(255,120,220,0.10)");
     }
 
     // Floor
-    ctx.fillStyle = "rgba(255,255,255,0.22)";
-    ctx.fillRect(0, floorY, state.w, state.h - floorY);
+    drawPixelRect(0, floorY, state.w, state.h - floorY, "rgba(255,255,255,0.10)");
+    // floor stripe
+    drawPixelRect(0, floorY + 18, state.w, 4, "rgba(255,255,255,0.14)");
 
     // Lockers parallax strip
-    ctx.fillStyle = "rgba(255,255,255,0.10)";
     const lockerY = floorY - 130;
     for (let i = 0; i < 20; i++) {
       const x = (i * 140) - (L1.camX * 0.6 % 140) - 20;
-      ctx.fillRect(x, lockerY, 90, 120);
+      drawPixelRect(x, lockerY, 92, 124, "rgba(255,255,255,0.08)");
+      drawPixelRect(x + 6, lockerY + 10, 80, 4, "rgba(255,255,255,0.06)");
+      drawPixelRect(x + 6, lockerY + 60, 80, 4, "rgba(255,255,255,0.06)");
     }
 
-    // Boxes + carrots (Phase A)
+    // Boxes + carrots
     if (L1.phase === "carrot") {
       for (const box of L1.boxes) {
         const x = box.x - L1.camX;
-        if (x < -140 || x > state.w + 140) continue;
-
-        ctx.fillStyle = box.opened ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.70)";
-        ctx.fillRect(x, box.y, box.w, box.h);
-
-        // subtle "X" mark on opened decoys
-        if (box.opened && box.decoy) {
-          ctx.fillStyle = "rgba(0,0,0,0.35)";
-          ctx.fillRect(x + 10, box.y + 12, box.w - 20, 4);
-        }
+        if (x < -160 || x > state.w + 160) continue;
+        drawCrate(x, box.y, box.w, box.h, box.opened, box.decoy);
       }
 
-      // March Hare silhouette (visual only)
+      // March Hare silhouette
       if (L1.hare.active) {
         const hx = L1.hare.x - L1.camX;
         const hy = floorY - 118;
-        ctx.fillStyle = "rgba(0,0,0,0.35)";
-        ctx.fillRect(hx, hy, 22, 18);
+        drawPixelRect(hx, hy, 24, 18, "rgba(0,0,0,0.35)");
+        drawPixelRect(hx + 16, hy - 8, 6, 10, "rgba(0,0,0,0.25)");
       }
 
-      // Carrots
       for (const c of L1.carrots) {
         const cx = c.x - L1.camX;
-        ctx.fillStyle = "rgba(255,255,255,0.95)";
-        ctx.fillRect(cx, c.y, c.w, c.h);
+        drawCarrot(cx, c.y, 1);
       }
     }
 
     // Player
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(player.x, player.y, player.w, player.h);
+    drawChibiPlayer();
 
     // HUD
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.font = "600 16px system-ui, Arial";
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.font = "700 16px system-ui, Arial";
     ctx.textAlign = "left";
     ctx.fillText(`Level 1 — Hallway Hustle`, 16, 56);
     ctx.fillText(`Phase: ${L1.phase}`, 16, 78);
@@ -352,9 +463,8 @@
     ctx.textAlign = "right";
     ctx.fillText(`Jump: Space • Back: Esc`, state.w - 16, 56);
 
-    // Tiny mobile hint
-    ctx.font = "600 13px system-ui, Arial";
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.font = "700 13px system-ui, Arial";
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
     ctx.textAlign = "right";
     ctx.fillText(`Phone: hold left/right • tap middle to jump`, state.w - 16, 78);
   }
@@ -371,6 +481,8 @@
       if (e.key === "ArrowLeft") state.selected = (state.selected + state.chars.length - 1) % state.chars.length;
       if (e.key === "ArrowRight") state.selected = (state.selected + 1) % state.chars.length;
       if (e.key === "Enter" || e.key === " ") {
+        const name = state.chars[state.selected].name;
+        player.style = CHAR_STYLE[name] || CHAR_STYLE.Holli;
         resetLevel1();
         state.screen = "level1";
       }
@@ -391,9 +503,7 @@
     }
   });
 
-  window.addEventListener("keyup", (e) => {
-    keys.delete(e.key);
-  });
+  window.addEventListener("keyup", (e) => keys.delete(e.key));
 
   // -------------------- Touch controls --------------------
   function clearTouch() {
@@ -409,27 +519,25 @@
   canvas.addEventListener("pointerdown", (e) => {
     const x = e.clientX;
 
-    // Title -> Select
     if (state.screen === "title") {
       state.screen = "select";
       return;
     }
 
-    // Select screen: tap left/right to change, tap center to start
     if (state.screen === "select") {
       if (x < state.w * 0.33) state.selected = (state.selected + state.chars.length - 1) % state.chars.length;
       else if (x > state.w * 0.66) state.selected = (state.selected + 1) % state.chars.length;
       else {
+        const name = state.chars[state.selected].name;
+        player.style = CHAR_STYLE[name] || CHAR_STYLE.Holli;
         resetLevel1();
         state.screen = "level1";
       }
       return;
     }
 
-    // Level 1: left/right hold to move, middle tap to jump
     if (state.screen === "level1") {
       if (x >= state.w * 0.33 && x <= state.w * 0.66) {
-        // middle = jump
         if (player.onGround) {
           player.vy = -PHYS.jumpV;
           player.onGround = false;
@@ -443,7 +551,7 @@
 
   canvas.addEventListener("pointermove", (e) => {
     if (state.screen !== "level1") return;
-    if (e.buttons !== 1) return; // only when finger/mouse is held down
+    if (e.buttons !== 1) return;
     setTouchFromX(e.clientX);
   });
 
