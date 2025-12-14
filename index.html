@@ -13,18 +13,14 @@
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1 style="margin:0;">A Very Trojan Christmas</h1>
-    <div class="hint">Test page is live. Game files coming next.</div>
+  <div id="hud">
+  <button id="muteBtn">Sound: On</button>
+</div>
+<canvas id="game"></canvas>
+<div id="toast"></div>
 
-    <!-- We'll swap this for the real end-screen later -->
-    <img src="assets/HTHS_logo.jpg" alt="HTHS Logo" />
-
-    <button class="btn" onclick="alert('Next: upload game files (game.js, assets, audio).');">
-      Start (test)
-    </button>
-
-    <div class="hint">If you can see this page, GitHub Pages is working.</div>
-  </div>
+<link rel="stylesheet" href="style.css" />
+<script src="game.js"></script>
+  
 </body>
 </html>
