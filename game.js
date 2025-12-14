@@ -20,17 +20,17 @@
     ],
   };
 
-  // Fixed internal game resolution (letterboxed to fit any phone orientation)
+  // ✅ Phone scaling tweak you applied
   const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 520;
 
-// Smaller internal resolution = bigger-looking game on phones (no logic changes)
-let VIEW = {
-  gw: isPhone ? 560 : 960,
-  gh: isPhone ? 315 : 540, // keep 16:9
-  scale: 1,
-  ox: 0,
-  oy: 0,
-};
+  // Fixed internal game resolution (letterboxed to fit any phone orientation)
+  const VIEW = {
+    gw: isPhone ? 560 : 960,
+    gh: isPhone ? 315 : 540, // 16:9
+    scale: 1,
+    ox: 0,
+    oy: 0,
+  };
 
   function computeView() {
     VIEW.scale = Math.min(state.w / VIEW.gw, state.h / VIEW.gh);
@@ -67,10 +67,7 @@ let VIEW = {
     ctx.imageSmoothingEnabled = false;
 
     state.w = w;
-    state.h = h; 
-    const phone = Math.min(state.w, state.h) <= 520;
-    VIEW.gw = phone ? 560 : 960;
-    VIEW.gh = phone ? 315 : 540;
+    state.h = h;
     computeView();
   }
   window.addEventListener("resize", resize);
@@ -83,7 +80,6 @@ let VIEW = {
     const gy = (clientY - VIEW.oy) / VIEW.scale;
     return { gx, gy };
   }
-
   function inGameBounds(gx, gy) {
     return gx >= 0 && gx <= VIEW.gw && gy >= 0 && gy <= VIEW.gh;
   }
@@ -165,6 +161,8 @@ let VIEW = {
       beep({ type:"triangle", f0:880, f1:1320, dur:0.07, gain:0.06 });
       setTimeout(() => beep({ type:"triangle", f0:1320, f1:1760, dur:0.05, gain:0.05 }), 30);
     },
+    throw: () => beep({ type:"triangle", f0:420, f1:620, dur:0.06, gain:0.05 }),
+    swish: () => beep({ type:"triangle", f0:980, f1:1680, dur:0.10, gain:0.06 }),
   };
 
   // hallway murmur
@@ -245,7 +243,7 @@ let VIEW = {
   const PHYS = { gravity: 1800, jumpV: 640, moveSpeed: 260 };
 
   const player = {
-    x: 140, y: 0, // game coords
+    x: 140, y: 0,
     w: 30, h: 40,
     vx: 0, vy: 0,
     onGround: false,
@@ -257,11 +255,20 @@ let VIEW = {
     camX: 0,
     speed: 220,
     score: 0,
-    phase: "carrot",
+    phase: "carrot", // carrot -> shot -> colouring (later)
     timeInLevel: 0,
+
+    // Phase 1
     boxes: [],
     carrots: [],
     nextBoxX: 360,
+
+    // Phase 2 (Impossible Shot)
+    shots: [],            // flying balls in screen coords
+    shotHits: 0,
+    shotAttempts: 0,
+    shotCooldown: 0,
+    cup: { x: 0, y: 0, w: 22, h: 14 },
   };
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -271,9 +278,16 @@ let VIEW = {
     L1.score = 0;
     L1.phase = "carrot";
     L1.timeInLevel = 0;
+
     L1.boxes = [];
     L1.carrots = [];
     L1.nextBoxX = 360;
+
+    L1.shots = [];
+    L1.shotHits = 0;
+    L1.shotAttempts = 0;
+    L1.shotCooldown = 0;
+    L1.cup = { x: VIEW.gw - 60, y: 50, w: 22, h: 14 };
 
     player.x = 140;
     player.y = 0;
@@ -287,6 +301,7 @@ let VIEW = {
     return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
   }
 
+  // -------- Phase 1: Carrot in a Box --------
   function spawnBoxesAhead(floorY) {
     const spawnToX = L1.camX + VIEW.gw + 240;
     while (L1.nextBoxX < spawnToX) {
@@ -339,12 +354,88 @@ let VIEW = {
     L1.carrots = L1.carrots.filter(c => c.alive);
   }
 
+  // -------- Phase 2: Impossible Shot --------
+  function initShotPhase() {
+    L1.phase = "shot";
+    L1.shots = [];
+    L1.shotHits = 0;
+    L1.shotAttempts = 0;
+    L1.shotCooldown = 0;
+    // Cup near ceiling/top-right
+    L1.cup = { x: VIEW.gw - 70, y: 46, w: 26, h: 16 };
+  }
+
+  function fireShot() {
+    if (L1.phase !== "shot") return;
+    if (L1.shotCooldown > 0) return;
+
+    L1.shotAttempts += 1;
+    L1.shotCooldown = 0.28;
+
+    // Spawn ball from player (screen coords)
+    const startX = player.x + player.w - 6;
+    const startY = player.y + 10;
+
+    // “Impossible”: slight random drift so it’s not automatic
+    const drift = (Math.random() * 2 - 1) * 90;
+
+    L1.shots.push({
+      x: startX,
+      y: startY,
+      vx: 520 + drift,    // forward/right
+      vy: -720,           // up
+      r: 4,
+      alive: true,
+    });
+
+    SFX.throw();
+  }
+
+  function updateShots(dt) {
+    const g = 1100;
+
+    // cup gently wiggles a bit (small “hard” feeling)
+    L1.cup.y = 46 + Math.round(Math.sin(state.t * 2.2) * 4);
+
+    for (const b of L1.shots) {
+      if (!b.alive) continue;
+      b.vy += g * dt;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+
+      // hit cup?
+      if (rectsOverlap(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2, L1.cup.x, L1.cup.y, L1.cup.w, L1.cup.h)) {
+        b.alive = false;
+        L1.shotHits += 1;
+        L1.score += 250;
+        SFX.swish();
+      }
+
+      // out of bounds
+      if (b.x < -40 || b.x > VIEW.gw + 60 || b.y > VIEW.gh + 60) b.alive = false;
+    }
+
+    L1.shots = L1.shots.filter(s => s.alive);
+    if (L1.shotCooldown > 0) L1.shotCooldown -= dt;
+  }
+
+  // -------------------- Update loop --------------------
   function updateLevel1(dt) {
     const floorY = VIEW.gh * 0.78;
 
-    L1.camX += L1.speed * dt;
     L1.timeInLevel += dt;
 
+    // Transition: after ~22 seconds of Carrot phase, go to Impossible Shot
+    if (L1.phase === "carrot" && L1.timeInLevel > 22) {
+      initShotPhase();
+    }
+
+    // Auto-scroll camera only in Carrot phase (boxes world-x)
+    if (L1.phase === "carrot") {
+      L1.camX += L1.speed * dt;
+    }
+
+    // Movement input
     const left = touch.left || keys.has("ArrowLeft") || keys.has("a") || keys.has("A");
     const right = touch.right || keys.has("ArrowRight") || keys.has("d") || keys.has("D");
 
@@ -355,8 +446,10 @@ let VIEW = {
     if (player.vx < -5) player.facing = -1;
     else if (player.vx > 5) player.facing = 1;
 
+    // Keep player in a comfortable band
     player.x = clamp(player.x + player.vx * dt, 60, VIEW.gw * 0.55);
 
+    // Physics integrate (still allow jumping in phase 1)
     const prevY = player.y;
     player.vy += PHYS.gravity * dt;
     player.y += player.vy * dt;
@@ -369,45 +462,59 @@ let VIEW = {
       player.onGround = false;
     }
 
-    spawnBoxesAhead(floorY);
-    updateCarrots(dt, floorY);
+    if (L1.phase === "carrot") {
+      spawnBoxesAhead(floorY);
+      updateCarrots(dt, floorY);
 
-    for (const box of L1.boxes) {
-      const sx = box.x - L1.camX;
-      if (sx < -160 || sx > VIEW.gw + 160) continue;
+      for (const box of L1.boxes) {
+        const sx = box.x - L1.camX;
+        if (sx < -160 || sx > VIEW.gw + 160) continue;
 
-      const falling = player.vy >= 0;
-      const overlap = rectsOverlap(player.x, player.y, player.w, player.h, sx, box.y, box.w, box.h);
-      const cameFromAbove = (prevY + player.h) <= (box.y + 8);
+        const falling = player.vy >= 0;
+        const overlap = rectsOverlap(player.x, player.y, player.w, player.h, sx, box.y, box.w, box.h);
+        const cameFromAbove = (prevY + player.h) <= (box.y + 8);
 
-      if (falling && overlap && cameFromAbove) {
-        player.y = box.y - player.h;
-        player.vy = 0;
-        player.onGround = true;
-        tryOpenBox(box);
+        if (falling && overlap && cameFromAbove) {
+          player.y = box.y - player.h;
+          player.vy = 0;
+          player.onGround = true;
+          tryOpenBox(box);
+        }
+      }
+
+      L1.boxes = L1.boxes.filter(b => b.x > L1.camX - 320);
+    }
+
+    if (L1.phase === "shot") {
+      // Keep player grounded (feels like throwing in the hallway)
+      player.y = floorY - player.h;
+      player.vy = 0;
+      player.onGround = true;
+
+      updateShots(dt);
+
+      // Transition later (we’ll hook colouring next): after 6 attempts, move on
+      if (L1.shotAttempts >= 6) {
+        // placeholder: stay for now, but show we’re done
+        // Later: L1.phase = "colouring";
       }
     }
 
-    L1.boxes = L1.boxes.filter(b => b.x > L1.camX - 320);
-    L1.score += Math.floor(L1.speed * dt * 0.05);
+    // small baseline score
+    L1.score += Math.floor(dt * 2);
   }
 
   // -------------------- Drawing helpers --------------------
   function clearScreen() {
-    // black bars (letterbox)
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, state.w, state.h);
   }
-
   function beginGameDraw() {
     ctx.save();
     ctx.translate(VIEW.ox, VIEW.oy);
     ctx.scale(VIEW.scale, VIEW.scale);
   }
-
-  function endGameDraw() {
-    ctx.restore();
-  }
+  function endGameDraw() { ctx.restore(); }
 
   function drawCenteredText(text, y, size = 28, alpha = 1) {
     ctx.save();
@@ -424,7 +531,7 @@ let VIEW = {
     ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
   }
 
-  // Chibi player (THIS is what brings the character back in gameplay)
+  // Chibi player
   function drawChibiPlayer() {
     const st = player.style || CHAR_STYLE.Holli;
     const speedMag = Math.min(1, Math.abs(player.vx) / PHYS.moveSpeed);
@@ -483,7 +590,6 @@ let VIEW = {
   function drawCrate(x, y, w, h, opened, decoy) {
     const base = opened ? "rgba(255,214,120,0.25)" : "#FFB74A";
     const dark = opened ? "rgba(120,70,10,0.20)" : "#B86A12";
-
     drawPixelRect(x, y, w, h, base);
     for (let i = 1; i <= 3; i++) {
       const yy = y + (h * i) / 4;
@@ -492,9 +598,17 @@ let VIEW = {
     if (opened && decoy) drawPixelRect(x + w/2 - 10, y + h/2 - 2, 20, 4, "rgba(0,0,0,0.25)");
   }
 
-  function uiSizes() {
-    // Now based on fixed internal size, not phone orientation
-    return { hud: 16, hint: 13, line: 22 };
+  function drawCup() {
+    // Simple cup silhouette
+    const c = L1.cup;
+    drawPixelRect(c.x, c.y, c.w, c.h, "rgba(255,255,255,0.88)");
+    drawPixelRect(c.x + 3, c.y + 3, c.w - 6, c.h - 6, "rgba(0,0,0,0.35)");
+    // rim
+    drawPixelRect(c.x - 2, c.y - 2, c.w + 4, 3, "rgba(255,255,255,0.92)");
+  }
+
+  function drawBall(b) {
+    drawPixelRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2, "rgba(255,255,255,0.92)");
   }
 
   // -------------------- Screens --------------------
@@ -508,7 +622,6 @@ let VIEW = {
     const c = state.chars[state.selected];
     drawCenteredText(`${c.name} — ${c.tag}`, VIEW.gh * 0.26, 16, 0.9);
 
-    // portraits row
     const midY = VIEW.gh * 0.55;
     const spacing = 140;
     const totalW = spacing * (state.chars.length - 1);
@@ -521,7 +634,6 @@ let VIEW = {
 
       if (isSel) drawPixelRect(x - 6, y - 6, 60, 64, "rgba(255,255,255,0.22)");
 
-      // mini portrait
       const st = CHAR_STYLE[state.chars[i].name] || CHAR_STYLE.Holli;
       drawPixelRect(x, y, 48, 52, "rgba(255,255,255,0.18)");
       drawPixelRect(x + 2, y + 2, 44, 48, "rgba(0,0,0,0.45)");
@@ -552,35 +664,56 @@ let VIEW = {
     // floor
     drawPixelRect(0, floorY, VIEW.gw, VIEW.gh - floorY, "rgba(255,255,255,0.10)");
 
-    // boxes + carrots
-    for (const box of L1.boxes) {
-      const x = box.x - L1.camX;
-      if (x < -160 || x > VIEW.gw + 160) continue;
-      drawCrate(x, box.y, box.w, box.h, box.opened, box.decoy);
-    }
-    for (const c of L1.carrots) {
-      const cx = c.x - L1.camX;
-      drawCarrot(cx, c.y);
+    if (L1.phase === "carrot") {
+      for (const box of L1.boxes) {
+        const x = box.x - L1.camX;
+        if (x < -160 || x > VIEW.gw + 160) continue;
+        drawCrate(x, box.y, box.w, box.h, box.opened, box.decoy);
+      }
+      for (const c of L1.carrots) {
+        const cx = c.x - L1.camX;
+        drawCarrot(cx, c.y);
+      }
     }
 
-    // ✅ chibi character (not the placeholder block)
+    if (L1.phase === "shot") {
+      // Cup + balls
+      drawCup();
+      for (const b of L1.shots) drawBall(b);
+    }
+
+    // player
     drawChibiPlayer();
 
     // HUD
-    const U = uiSizes();
     ctx.fillStyle = "rgba(255,255,255,0.95)";
-    ctx.font = `700 ${U.hud}px system-ui, Arial`;
+    ctx.font = "700 16px system-ui, Arial";
     ctx.textAlign = "left";
-    ctx.fillText(`Level 1 — Hallway Hustle`, 16, 16 + U.line);
-    ctx.fillText(`Phase: ${L1.phase}`, 16, 16 + U.line * 2);
-    ctx.fillText(`Score: ${L1.score}`, 16, 16 + U.line * 3);
+    ctx.fillText(`Level 1 — Hallway Hustle`, 16, 38);
+    ctx.fillText(`Phase: ${L1.phase}`, 16, 60);
+    ctx.fillText(`Score: ${L1.score}`, 16, 82);
 
     ctx.textAlign = "right";
-    ctx.fillText(`Jump: Space • Back: Esc`, VIEW.gw - 16, 16 + U.line);
+    ctx.fillText(`Back: Esc`, VIEW.gw - 16, 38);
 
-    ctx.font = `700 ${U.hint}px system-ui, Arial`;
+    ctx.font = "700 13px system-ui, Arial";
     ctx.fillStyle = "rgba(255,255,255,0.70)";
-    ctx.fillText(`Phone: hold left/right • tap middle to jump`, VIEW.gw - 16, 16 + U.line * 2);
+    ctx.textAlign = "right";
+
+    if (L1.phase === "carrot") {
+      ctx.fillText(`Phone: hold left/right • tap middle to jump`, VIEW.gw - 16, 60);
+    } else if (L1.phase === "shot") {
+      ctx.fillText(`Laptop: Enter to throw • Phone: tap top-right to throw`, VIEW.gw - 16, 60);
+      ctx.fillText(`Hits: ${L1.shotHits} / Attempts: ${L1.shotAttempts}`, VIEW.gw - 16, 82);
+    }
+
+    // phase transition hint (tiny)
+    if (L1.phase === "shot" && L1.shotAttempts >= 6) {
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.textAlign = "center";
+      ctx.font = "800 16px system-ui, Arial";
+      ctx.fillText(`Nice! Next: Christmas Colouring (coming next)`, VIEW.gw / 2, VIEW.gh * 0.20);
+    }
   }
 
   // -------------------- Controls --------------------
@@ -606,11 +739,18 @@ let VIEW = {
     }
 
     if (state.screen === "level1") {
-      if ((e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") && player.onGround) {
+      // Jump ONLY in carrot phase
+      if (L1.phase === "carrot" && (e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") && player.onGround) {
         player.vy = -PHYS.jumpV;
         player.onGround = false;
         SFX.jump();
       }
+
+      // Throw in shot phase
+      if (L1.phase === "shot" && (e.key === "Enter")) {
+        fireShot();
+      }
+
       if (e.key === "Escape") { state.screen = "select"; resetLevel1(); SFX.tick(); }
       if (e.key === "r" || e.key === "R") { resetLevel1(); SFX.tick(); }
     }
@@ -624,8 +764,6 @@ let VIEW = {
   canvas.addEventListener("pointerdown", (e) => {
     ensureAudio();
     const { gx, gy } = screenToGame(e.clientX, e.clientY);
-
-    // ignore taps in the black bars
     if (!inGameBounds(gx, gy)) return;
 
     if (state.screen === "title") { state.screen = "select"; SFX.start(); return; }
@@ -644,11 +782,19 @@ let VIEW = {
     }
 
     if (state.screen === "level1") {
-      if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
-        if (player.onGround) { player.vy = -PHYS.jumpV; player.onGround = false; SFX.jump(); }
-        clearTouch();
-      } else {
-        setTouchFromGX(gx);
+      if (L1.phase === "carrot") {
+        // middle tap to jump
+        if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+          if (player.onGround) { player.vy = -PHYS.jumpV; player.onGround = false; SFX.jump(); }
+          clearTouch();
+        } else setTouchFromGX(gx);
+      } else if (L1.phase === "shot") {
+        // top-right tap to throw (easy + reliable on phones)
+        if (gx > VIEW.gw * 0.66 && gy < VIEW.gh * 0.35) {
+          fireShot();
+        } else {
+          setTouchFromGX(gx); // still allow moving
+        }
       }
     }
   });
@@ -674,13 +820,18 @@ let VIEW = {
     state.t = now;
 
     clearScreen();
-    beginGameDraw();
+    ctx.save();
+    ctx.translate(VIEW.ox, VIEW.oy);
+    ctx.scale(VIEW.scale, VIEW.scale);
 
     if (state.screen === "title") drawTitle();
     else if (state.screen === "select") drawSelect();
-    else if (state.screen === "level1") { updateLevel1(dt); drawLevel1(); }
+    else if (state.screen === "level1") {
+      updateLevel1(dt);
+      drawLevel1();
+    }
 
-    endGameDraw();
+    ctx.restore();
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
