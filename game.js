@@ -20,6 +20,21 @@
     ],
   };
 
+  // Fixed internal game resolution (letterboxed to fit any phone orientation)
+  const VIEW = {
+    gw: 960,   // game width in "logical" pixels
+    gh: 540,   // game height (16:9)
+    scale: 1,
+    ox: 0,
+    oy: 0,
+  };
+
+  function computeView() {
+    VIEW.scale = Math.min(state.w / VIEW.gw, state.h / VIEW.gh);
+    VIEW.ox = (state.w - VIEW.gw * VIEW.scale) / 2;
+    VIEW.oy = (state.h - VIEW.gh * VIEW.scale) / 2;
+  }
+
   // Bright arcade palette
   const CHAR_STYLE = {
     Holli:  { skin:"#FFD2B5", hair:"#F2D16B", shirt:"#3EE6C1", pants:"#2B2B2B" },
@@ -34,42 +49,38 @@
   const keys = new Set();
   const touch = { left: false, right: false };
 
-  // -------------------- Resize (debounced for rotation stability) --------------------
-  function getViewportSize() {
-    const vv = window.visualViewport;
-    const w = vv ? Math.round(vv.width) : window.innerWidth;
-    const h = vv ? Math.round(vv.height) : window.innerHeight;
-    return { w, h };
-  }
-
-  function doResize() {
-    const { w, h } = getViewportSize();
+  // -------------------- Resize --------------------
+  function resize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
     canvas.width = Math.floor(w * dpr);
     canvas.height = Math.floor(h * dpr);
     canvas.style.width = w + "px";
     canvas.style.height = h + "px";
+
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
+
     state.w = w;
     state.h = h;
+    computeView();
+  }
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", () => setTimeout(resize, 120));
+  resize();
+
+  // Convert screen (CSS px) to game coords (logical) accounting for letterbox
+  function screenToGame(clientX, clientY) {
+    const gx = (clientX - VIEW.ox) / VIEW.scale;
+    const gy = (clientY - VIEW.oy) / VIEW.scale;
+    return { gx, gy };
   }
 
-  // Debounce to avoid “resize thrash” when browser bars settle
-  let resizeTimer = null;
-  let settleTimer = null;
-  function requestResize() {
-    clearTimeout(resizeTimer);
-    clearTimeout(settleTimer);
-    resizeTimer = setTimeout(doResize, 120);
-    settleTimer = setTimeout(doResize, 380);
+  function inGameBounds(gx, gy) {
+    return gx >= 0 && gx <= VIEW.gw && gy >= 0 && gy <= VIEW.gh;
   }
-
-  window.addEventListener("resize", requestResize);
-  window.addEventListener("orientationchange", requestResize);
-  if (window.visualViewport) window.visualViewport.addEventListener("resize", requestResize);
-
-  doResize();
 
   // -------------------- Web Audio (SFX + hallway murmur) --------------------
   let audioCtx = null;
@@ -82,9 +93,7 @@
       if (!Ctx) return;
       audioCtx = new Ctx();
     }
-    if (audioCtx && audioCtx.state === "suspended") {
-      audioCtx.resume().catch(() => {});
-    }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
     if (audioCtx && audioCtx.state === "running") ensureAmbience();
   }
 
@@ -109,7 +118,6 @@
 
     o.connect(g);
     g.connect(audioCtx.destination);
-
     o.start(t0);
     o.stop(t1 + 0.01);
   }
@@ -137,7 +145,6 @@
 
     src.connect(g);
     g.connect(audioCtx.destination);
-
     src.start(t0);
     src.stop(t1 + 0.01);
   }
@@ -154,13 +161,14 @@
     },
   };
 
+  // hallway murmur
   function ensureAmbience() {
     if (state.muted) { stopAmbience(); return; }
     if (!audioCtx || audioCtx.state !== "running") return;
     if (ambience) return;
 
     const master = audioCtx.createGain();
-    master.gain.value = 0.020; // subtle
+    master.gain.value = 0.020;
 
     const dur = 2.0;
     const size = Math.floor(audioCtx.sampleRate * dur);
@@ -182,10 +190,8 @@
     bp2.frequency.value = 950;
     bp2.Q.value = 0.9;
 
-    const mix1 = audioCtx.createGain();
-    mix1.gain.value = 0.55;
-    const mix2 = audioCtx.createGain();
-    mix2.gain.value = 0.45;
+    const mix1 = audioCtx.createGain(); mix1.gain.value = 0.55;
+    const mix2 = audioCtx.createGain(); mix2.gain.value = 0.45;
 
     const lfo = audioCtx.createOscillator();
     lfo.type = "sine";
@@ -229,12 +235,12 @@
     ambience = null;
   }
 
-  // -------------------- Level 1: movement + Carrot in a Box --------------------
+  // -------------------- Level 1 --------------------
   const PHYS = { gravity: 1800, jumpV: 640, moveSpeed: 260 };
 
   const player = {
-    x: 120, y: 0,
-    w: 28, h: 34,
+    x: 140, y: 0, // game coords
+    w: 30, h: 40,
     vx: 0, vy: 0,
     onGround: false,
     facing: 1,
@@ -250,7 +256,6 @@
     boxes: [],
     carrots: [],
     nextBoxX: 360,
-    hare: { active: false, x: 0, t: 0 },
   };
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -260,18 +265,16 @@
     L1.score = 0;
     L1.phase = "carrot";
     L1.timeInLevel = 0;
+    L1.boxes = [];
+    L1.carrots = [];
+    L1.nextBoxX = 360;
 
-    player.x = 120;
+    player.x = 140;
     player.y = 0;
     player.vx = 0;
     player.vy = 0;
     player.onGround = false;
     player.facing = 1;
-
-    L1.boxes = [];
-    L1.carrots = [];
-    L1.nextBoxX = 360;
-    L1.hare = { active: false, x: 0, t: 0 };
   }
 
   function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
@@ -279,7 +282,7 @@
   }
 
   function spawnBoxesAhead(floorY) {
-    const spawnToX = L1.camX + state.w + 240;
+    const spawnToX = L1.camX + VIEW.gw + 240;
     while (L1.nextBoxX < spawnToX) {
       const w = 52 + Math.floor(Math.random() * 18);
       const h = 32 + Math.floor(Math.random() * 12);
@@ -297,7 +300,6 @@
   function tryOpenBox(box) {
     if (box.opened) return;
     box.opened = true;
-
     if (box.decoy) { SFX.decoy(); return; }
     SFX.open();
 
@@ -332,7 +334,7 @@
   }
 
   function updateLevel1(dt) {
-    const floorY = state.h * 0.78;
+    const floorY = VIEW.gh * 0.78;
 
     L1.camX += L1.speed * dt;
     L1.timeInLevel += dt;
@@ -347,7 +349,7 @@
     if (player.vx < -5) player.facing = -1;
     else if (player.vx > 5) player.facing = 1;
 
-    player.x = clamp(player.x + player.vx * dt, 60, state.w * 0.55);
+    player.x = clamp(player.x + player.vx * dt, 60, VIEW.gw * 0.55);
 
     const prevY = player.y;
     player.vy += PHYS.gravity * dt;
@@ -366,7 +368,7 @@
 
     for (const box of L1.boxes) {
       const sx = box.x - L1.camX;
-      if (sx < -160 || sx > state.w + 160) continue;
+      if (sx < -160 || sx > VIEW.gw + 160) continue;
 
       const falling = player.vy >= 0;
       const overlap = rectsOverlap(player.x, player.y, player.w, player.h, sx, box.y, box.w, box.h);
@@ -384,19 +386,30 @@
     L1.score += Math.floor(L1.speed * dt * 0.05);
   }
 
-  // -------------------- Drawing --------------------
-  function clear() {
-    ctx.fillStyle = "#06101A";
+  // -------------------- Drawing helpers --------------------
+  function clearScreen() {
+    // black bars (letterbox)
+    ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, state.w, state.h);
+  }
+
+  function beginGameDraw() {
+    ctx.save();
+    ctx.translate(VIEW.ox, VIEW.oy);
+    ctx.scale(VIEW.scale, VIEW.scale);
+  }
+
+  function endGameDraw() {
+    ctx.restore();
   }
 
   function drawCenteredText(text, y, size = 28, alpha = 1) {
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = "#FFFFFF";
+    ctx.fillStyle = "#fff";
     ctx.font = `700 ${size}px system-ui, Arial`;
     ctx.textAlign = "center";
-    ctx.fillText(text, state.w / 2, y);
+    ctx.fillText(text, VIEW.gw / 2, y);
     ctx.restore();
   }
 
@@ -405,21 +418,49 @@
     ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
   }
 
-  function drawMiniPortrait(x, y, name) {
-    const st = CHAR_STYLE[name] || CHAR_STYLE.Holli;
-    // portrait frame
-    drawPixelRect(x, y, 48, 52, "rgba(255,255,255,0.18)");
-    drawPixelRect(x + 2, y + 2, 44, 48, "rgba(0,0,0,0.45)");
+  // Chibi player (THIS is what brings the character back in gameplay)
+  function drawChibiPlayer() {
+    const st = player.style || CHAR_STYLE.Holli;
+    const speedMag = Math.min(1, Math.abs(player.vx) / PHYS.moveSpeed);
+    const bob = Math.round(Math.sin(state.t * 14) * 2 * speedMag);
 
-    // head
-    drawPixelRect(x + 14, y + 10, 20, 16, st.skin);
-    drawPixelRect(x + 14, y + 10, 20, 6, st.hair);
+    const px = Math.round(player.x);
+    const py = Math.round(player.y + bob);
+
+    const headW = 18, headH = 16;
+    const bodyW = 18, bodyH = 14;
+
+    const cx = px + Math.round((player.w - headW) / 2);
+    const headY = py + 2;
+    const bodyY = headY + headH;
+    const legY  = bodyY + bodyH;
+
+    // shadow
+    drawPixelRect(px + 6, py + player.h - 3, player.w - 12, 3, "rgba(0,0,0,0.25)");
+
+    // head + hair
+    drawPixelRect(cx, headY, headW, headH, st.skin);
+    drawPixelRect(cx, headY, headW, 6, st.hair);
+
     // eyes
-    drawPixelRect(x + 20, y + 18, 2, 2, "#1A1A1A");
-    drawPixelRect(x + 26, y + 18, 2, 2, "#1A1A1A");
+    const eyeY = headY + 8;
+    if (player.facing === 1) {
+      drawPixelRect(cx + 10, eyeY, 2, 2, "#1A1A1A");
+      drawPixelRect(cx + 13, eyeY, 2, 2, "#1A1A1A");
+    } else {
+      drawPixelRect(cx + 3, eyeY, 2, 2, "#1A1A1A");
+      drawPixelRect(cx + 6, eyeY, 2, 2, "#1A1A1A");
+    }
+
     // body
-    drawPixelRect(x + 14, y + 28, 20, 14, st.shirt);
-    drawPixelRect(x + 14, y + 38, 20, 4, st.pants);
+    const bx = px + Math.round((player.w - bodyW) / 2);
+    drawPixelRect(bx, bodyY, bodyW, bodyH, st.shirt);
+    drawPixelRect(bx, bodyY + bodyH - 4, bodyW, 4, st.pants);
+
+    // legs
+    const step = Math.round(Math.sin(state.t * 14) * 2 * speedMag);
+    drawPixelRect(bx + 2, legY + Math.max(0, -step), 6, 9, st.pants);
+    drawPixelRect(bx + bodyW - 8, legY + Math.max(0, step), 6, 9, st.pants);
   }
 
   function drawCarrot(cx, y) {
@@ -436,73 +477,79 @@
   function drawCrate(x, y, w, h, opened, decoy) {
     const base = opened ? "rgba(255,214,120,0.25)" : "#FFB74A";
     const dark = opened ? "rgba(120,70,10,0.20)" : "#B86A12";
-    const edge = opened ? "rgba(0,0,0,0.18)" : "rgba(0,0,0,0.28)";
 
     drawPixelRect(x, y, w, h, base);
-    ctx.strokeStyle = edge;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(Math.round(x)+1, Math.round(y)+1, Math.round(w)-2, Math.round(h)-2);
-
     for (let i = 1; i <= 3; i++) {
       const yy = y + (h * i) / 4;
       drawPixelRect(x + 6, yy - 2, w - 12, 3, dark);
     }
-
     if (opened && decoy) drawPixelRect(x + w/2 - 10, y + h/2 - 2, 20, 4, "rgba(0,0,0,0.25)");
   }
 
+  function uiSizes() {
+    // Now based on fixed internal size, not phone orientation
+    return { hud: 16, hint: 13, line: 22 };
+  }
+
+  // -------------------- Screens --------------------
   function drawTitle() {
-    drawCenteredText("A Very Trojan Christmas", state.h * 0.35, 34);
-    drawCenteredText("Tap / Press Enter to start", state.h * 0.45, 18, 0.85);
+    drawCenteredText("A Very Trojan Christmas", VIEW.gh * 0.35, 34);
+    drawCenteredText("Tap / Press Enter to start", VIEW.gh * 0.45, 18, 0.85);
   }
 
   function drawSelect() {
-    drawCenteredText("Choose Your Character", state.h * 0.18, 28);
+    drawCenteredText("Choose Your Character", VIEW.gh * 0.18, 28);
     const c = state.chars[state.selected];
-    drawCenteredText(`${c.name} — ${c.tag}`, state.h * 0.26, 16, 0.9);
+    drawCenteredText(`${c.name} — ${c.tag}`, VIEW.gh * 0.26, 16, 0.9);
 
-    // portraits row (restored)
-    const midY = state.h * 0.55;
-    const spacing = Math.min(110, Math.max(72, state.w / 6.2));
+    // portraits row
+    const midY = VIEW.gh * 0.55;
+    const spacing = 140;
     const totalW = spacing * (state.chars.length - 1);
-    const startX = Math.round(state.w / 2 - totalW / 2);
+    const startX = Math.round(VIEW.gw / 2 - totalW / 2);
 
     for (let i = 0; i < state.chars.length; i++) {
       const x = startX + i * spacing;
       const y = Math.round(midY - 26);
       const isSel = i === state.selected;
 
-      // selection glow
-      if (isSel) {
-        drawPixelRect(x - 6, y - 6, 60, 64, "rgba(255,255,255,0.22)");
-      }
-      drawMiniPortrait(x, y, state.chars[i].name);
+      if (isSel) drawPixelRect(x - 6, y - 6, 60, 64, "rgba(255,255,255,0.22)");
 
-      // label
+      // mini portrait
+      const st = CHAR_STYLE[state.chars[i].name] || CHAR_STYLE.Holli;
+      drawPixelRect(x, y, 48, 52, "rgba(255,255,255,0.18)");
+      drawPixelRect(x + 2, y + 2, 44, 48, "rgba(0,0,0,0.45)");
+      drawPixelRect(x + 14, y + 10, 20, 16, st.skin);
+      drawPixelRect(x + 14, y + 10, 20, 6, st.hair);
+      drawPixelRect(x + 20, y + 18, 2, 2, "#1A1A1A");
+      drawPixelRect(x + 26, y + 18, 2, 2, "#1A1A1A");
+      drawPixelRect(x + 14, y + 28, 20, 14, st.shirt);
+      drawPixelRect(x + 14, y + 38, 20, 4, st.pants);
+
       ctx.fillStyle = isSel ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.65)";
       ctx.font = `700 ${isSel ? 13 : 12}px system-ui, Arial`;
       ctx.textAlign = "center";
       ctx.fillText(state.chars[i].name, x + 24, y + 70);
     }
 
-    drawCenteredText("← / → to choose • Enter to play", state.h * 0.85, 16, 0.85);
-    drawCenteredText("Tap left/right to choose • Tap center to play", state.h * 0.90, 14, 0.6);
-  }
-
-  function uiSizes() {
-    const shortSide = Math.min(state.w, state.h);
-    const s = Math.max(0.75, Math.min(1.0, shortSide / 520));
-    return { hud: Math.round(16 * s), hint: Math.round(13 * s), line: Math.round(22 * s) };
+    drawCenteredText("← / → to choose • Enter to play", VIEW.gh * 0.85, 16, 0.85);
+    drawCenteredText("Tap left/right to choose • Tap center to play", VIEW.gh * 0.90, 14, 0.6);
   }
 
   function drawLevel1() {
-    const floorY = state.h * 0.78;
+    const floorY = VIEW.gh * 0.78;
 
-    drawPixelRect(0, floorY, state.w, state.h - floorY, "rgba(255,255,255,0.10)");
+    // background
+    ctx.fillStyle = "#06101A";
+    ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
 
+    // floor
+    drawPixelRect(0, floorY, VIEW.gw, VIEW.gh - floorY, "rgba(255,255,255,0.10)");
+
+    // boxes + carrots
     for (const box of L1.boxes) {
       const x = box.x - L1.camX;
-      if (x < -160 || x > state.w + 160) continue;
+      if (x < -160 || x > VIEW.gw + 160) continue;
       drawCrate(x, box.y, box.w, box.h, box.opened, box.decoy);
     }
     for (const c of L1.carrots) {
@@ -510,11 +557,11 @@
       drawCarrot(cx, c.y);
     }
 
-    // player (simple block for now)
-    drawPixelRect(player.x, player.y, player.w, player.h, "#FFFFFF");
+    // ✅ chibi character (not the placeholder block)
+    drawChibiPlayer();
 
+    // HUD
     const U = uiSizes();
-
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.font = `700 ${U.hud}px system-ui, Arial`;
     ctx.textAlign = "left";
@@ -523,11 +570,11 @@
     ctx.fillText(`Score: ${L1.score}`, 16, 16 + U.line * 3);
 
     ctx.textAlign = "right";
-    ctx.fillText(`Jump: Space • Back: Esc`, state.w - 16, 16 + U.line);
+    ctx.fillText(`Jump: Space • Back: Esc`, VIEW.gw - 16, 16 + U.line);
 
     ctx.font = `700 ${U.hint}px system-ui, Arial`;
     ctx.fillStyle = "rgba(255,255,255,0.70)";
-    ctx.fillText(`Phone: hold left/right • tap middle to jump`, state.w - 16, 16 + U.line * 2);
+    ctx.fillText(`Phone: hold left/right • tap middle to jump`, VIEW.gw - 16, 16 + U.line * 2);
   }
 
   // -------------------- Controls --------------------
@@ -566,17 +613,20 @@
   window.addEventListener("keyup", (e) => keys.delete(e.key));
 
   function clearTouch() { touch.left = false; touch.right = false; }
-  function setTouchFromX(x) { touch.left = x < state.w * 0.33; touch.right = x > state.w * 0.66; }
+  function setTouchFromGX(gx) { touch.left = gx < VIEW.gw * 0.33; touch.right = gx > VIEW.gw * 0.66; }
 
   canvas.addEventListener("pointerdown", (e) => {
     ensureAudio();
-    const x = e.clientX;
+    const { gx, gy } = screenToGame(e.clientX, e.clientY);
+
+    // ignore taps in the black bars
+    if (!inGameBounds(gx, gy)) return;
 
     if (state.screen === "title") { state.screen = "select"; SFX.start(); return; }
 
     if (state.screen === "select") {
-      if (x < state.w * 0.33) { state.selected = (state.selected + state.chars.length - 1) % state.chars.length; SFX.tick(); }
-      else if (x > state.w * 0.66) { state.selected = (state.selected + 1) % state.chars.length; SFX.tick(); }
+      if (gx < VIEW.gw * 0.33) { state.selected = (state.selected + state.chars.length - 1) % state.chars.length; SFX.tick(); }
+      else if (gx > VIEW.gw * 0.66) { state.selected = (state.selected + 1) % state.chars.length; SFX.tick(); }
       else {
         const name = state.chars[state.selected].name;
         player.style = CHAR_STYLE[name] || CHAR_STYLE.Holli;
@@ -588,17 +638,21 @@
     }
 
     if (state.screen === "level1") {
-      if (x >= state.w * 0.33 && x <= state.w * 0.66) {
+      if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
         if (player.onGround) { player.vy = -PHYS.jumpV; player.onGround = false; SFX.jump(); }
         clearTouch();
-      } else setTouchFromX(x);
+      } else {
+        setTouchFromGX(gx);
+      }
     }
   });
 
   canvas.addEventListener("pointermove", (e) => {
     if (state.screen !== "level1") return;
     if (e.buttons !== 1) return;
-    setTouchFromX(e.clientX);
+    const { gx, gy } = screenToGame(e.clientX, e.clientY);
+    if (!inGameBounds(gx, gy)) return;
+    setTouchFromGX(gx);
   });
 
   canvas.addEventListener("pointerup", clearTouch);
@@ -613,12 +667,14 @@
     lastTs = now;
     state.t = now;
 
-    clear();
+    clearScreen();
+    beginGameDraw();
 
     if (state.screen === "title") drawTitle();
     else if (state.screen === "select") drawSelect();
     else if (state.screen === "level1") { updateLevel1(dt); drawLevel1(); }
 
+    endGameDraw();
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
