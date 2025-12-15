@@ -270,7 +270,7 @@
   const FX = {
     confetti: [],
     flashT: 0,
-    sparkles: [], // small “pop” particles for pickups
+    sparkles: [],
   };
 
   function spawnSparkles(x, y, n = 10) {
@@ -310,48 +310,45 @@
     camX: 0,
     speed: 220,
     score: 0,
-    phase: "carrot", // carrot -> shot -> colouring
+    phase: "carrot",
     timeInLevel: 0,
     phaseStartT: 0,
     levelDone: false,
 
-    // Phase transition banner
     bannerT: 0,
     bannerText: "",
 
-    // Phase 1
     boxes: [],
     carrots: [],
     nextBoxX: 360,
 
-    // Phase 2
     shots: [],
     shotHits: 0,
     shotAttempts: 0,
     shotCooldown: 0,
     cup: { x: 0, y: 0, w: 30, h: 18 },
 
-    // Phase 3
     colouring: {
       progress: 0,
       target: 0,
       zones: [],
       done: false,
+      // NEW: late-slip cap during colouring
+      lateSpawned: 0,
+      lateCap: 10,
     },
 
-    // NPCs / hallway life
-    jamie: { x: 210, dir: 1, speed: 24, clipT: 0 }, // NPC J
+    jamie: { x: 210, dir: 1, speed: 24, clipT: 0 },
     lateIcons: [],
     nextLateT: 1.2,
 
-    michelle: { active: false, x: 0, t: 0 }, // NPC M
+    michelle: { active: false, x: 0, t: 0 },
     nextMichelleT: 6.0,
     posers: [],
 
     walkers: [],
     nextWalkerT: 1.0,
 
-    // Easter egg posters
     posterSeed: 0,
   };
 
@@ -390,8 +387,9 @@
     L1.colouring.progress = 0;
     L1.colouring.target = 0;
     L1.colouring.done = false;
+    L1.colouring.lateSpawned = 0;
+    L1.colouring.lateCap = 10;
 
-    // NPC resets
     L1.jamie = { x: 210, dir: 1, speed: 24, clipT: 0 };
     L1.lateIcons = [];
     L1.nextLateT = 1.2;
@@ -537,7 +535,10 @@
       ) {
         b.alive = false;
         L1.shotHits += 1;
-        L1.score += 250;
+
+        // CHANGE #1: hits worth 100
+        L1.score += 100;
+
         SFX.swish();
         spawnSparkles(L1.cup.x + L1.cup.w * 0.5, L1.cup.y + 6, 14);
       }
@@ -573,12 +574,22 @@
         const isBorder = r === 0 || r === rows - 1 || c === 0 || c === cols - 1;
         if (isBorder && Math.random() < 0.35) continue;
 
+        // CHANGE #3: each square has a “design type” + fill colour assigned when filled
+        const designRoll = Math.random();
+        const design =
+          designRoll < 0.18 ? "bow" :
+          designRoll < 0.36 ? "tree" :
+          designRoll < 0.52 ? "snowman" :
+          designRoll < 0.64 ? "star" : "solid";
+
         zones.push({
           x: startX + c * cell,
           y: startY + r * cell,
           w: cell - 2,
           h: cell - 2,
           filled: false,
+          fill: null,
+          design,
         });
       }
     }
@@ -587,6 +598,9 @@
     L1.colouring.progress = 0;
     L1.colouring.target = zones.length;
     L1.colouring.done = false;
+
+    // CHANGE #2: late-slip cap counters reset
+    L1.colouring.lateSpawned = 0;
 
     showPhaseBanner("CHRISTMAS COLOURING!");
   }
@@ -611,10 +625,20 @@
     if (j.x > VIEW.gw * 0.50) { j.x = VIEW.gw * 0.50; j.dir = -1; }
     if (j.clipT > 0) j.clipT -= dt;
 
+    // CHANGE #2: late slips stop after 10 spawns during colouring
     L1.nextLateT -= dt;
     if (L1.nextLateT <= 0) {
-      L1.nextLateT = (L1.phase === "colouring") ? 0.9 + Math.random() * 0.9 : 1.3 + Math.random() * 1.5;
-      spawnLateIcon();
+      const inColour = (L1.phase === "colouring");
+      const capReached = inColour && (L1.colouring.lateSpawned >= L1.colouring.lateCap);
+
+      if (!capReached) {
+        L1.nextLateT = inColour ? (0.9 + Math.random() * 0.9) : (1.3 + Math.random() * 1.5);
+        spawnLateIcon();
+        if (inColour) L1.colouring.lateSpawned += 1;
+      } else {
+        // stop spawning; keep timer “parked”
+        L1.nextLateT = 9999;
+      }
     }
 
     for (const ic of L1.lateIcons) {
@@ -624,7 +648,10 @@
 
       if (rectsOverlap(player.x, player.y, player.w, player.h, ic.x, ic.y, 12, 14)) {
         ic.alive = false;
+
+        // (still worth points, but capped by spawn count in colouring)
         L1.score += 60;
+
         j.clipT = 0.45;
         SFX.tick();
         spawnSparkles(player.x + player.w * 0.5, player.y + 10, 10);
@@ -714,11 +741,9 @@
     const floorY = VIEW.gh * 0.78;
     L1.timeInLevel += dt;
 
-    // phase transitions
     if (L1.phase === "carrot" && L1.timeInLevel > 40) initShotPhase();
     if (L1.phase === "shot" && (L1.timeInLevel - L1.phaseStartT) > 30) initColouringPhase();
 
-    // banner timer
     if (L1.bannerT > 0) L1.bannerT -= dt;
 
     if (L1.phase === "carrot") L1.camX += L1.speed * dt;
@@ -784,6 +809,15 @@
         if (z.filled) continue;
         if (rectsOverlap(player.x, player.y, player.w, player.h, z.x, z.y, z.w, z.h)) {
           z.filled = true;
+
+          // CHANGE #3: assign a festive fill colour when filled
+          const r = Math.random();
+          z.fill =
+            r < 0.40 ? "#C83A3A" :  // red
+            r < 0.78 ? "#2FAE5A" :  // green
+            r < 0.94 ? "#FFFFFF" :  // white
+            "#FFD24D";              // yellow (rare)
+
           L1.colouring.progress += 1;
           if ((L1.colouring.progress % 3) === 0) SFX.tick();
           spawnSparkles(z.x + z.w * 0.5, z.y + z.h * 0.5, 6);
@@ -824,18 +858,14 @@
     ctx.restore();
   }
 
-  // ---- “spiced” hallway background ----
   function drawHallwayBackdrop(floorY) {
-    // bright arcade gradient blocks
     drawPixelRect(0, 0, VIEW.gw, VIEW.gh, "#07162A");
     drawPixelRect(0, 0, VIEW.gw, floorY, "#0A1E36");
     drawPixelRect(0, 40, VIEW.gw, 2, "rgba(255,255,255,0.06)");
 
-    // maroon banner strip near top
     drawPixelRect(0, 10, VIEW.gw, 16, "rgba(128,0,32,0.20)");
     drawPixelRect(0, 26, VIEW.gw, 2, "rgba(255,210,77,0.18)");
 
-    // garland + lights
     const t = state.t * 1.2;
     const garY = 34;
     for (let i = 0; i < 28; i++) {
@@ -846,27 +876,22 @@
       drawPixelRect(x - 1, garY + 6 + wob, 3, 3, lit ? "#FFD24D" : "rgba(255,255,255,0.20)");
     }
 
-    // floor tiles
     drawPixelRect(0, floorY, VIEW.gw, VIEW.gh - floorY, "rgba(255,255,255,0.10)");
     for (let i = 0; i < 28; i++) {
       const x = i * 36 - (L1.phase === "carrot" ? (L1.camX * 0.35 % 36) : 0);
       drawPixelRect(x, floorY + 18, 2, VIEW.gh - floorY, "rgba(0,0,0,0.16)");
     }
 
-    // locker rows (parallax)
     const baseX = (L1.phase === "carrot") ? (-(L1.camX * 0.55) % 110) : (-(state.t * 30) % 110);
     const lockerY = floorY - 140;
     for (let i = 0; i < 14; i++) {
       const x = baseX + i * 110 - 20;
       drawPixelRect(x, lockerY, 86, 132, "rgba(255,255,255,0.08)");
       drawPixelRect(x + 2, lockerY + 2, 82, 128, "rgba(0,0,0,0.28)");
-
-      // locker “door” accent
       drawPixelRect(x + 8, lockerY + 10, 70, 4, "rgba(255,255,255,0.08)");
       drawPixelRect(x + 70, lockerY + 36, 6, 10, "rgba(255,255,255,0.08)");
     }
 
-    // windows
     for (let i = 0; i < 6; i++) {
       const wx = 40 + i * 150 - ((L1.phase === "carrot") ? (L1.camX * 0.20 % 150) : 0);
       drawPixelRect(wx, 64, 54, 46, "rgba(255,255,255,0.06)");
@@ -874,7 +899,6 @@
       drawPixelRect(wx + 6, 70, 42, 10, "rgba(77,163,255,0.18)");
     }
 
-    // posters (with a couple Easter egg labels)
     const pBase = (L1.phase === "carrot") ? (-(L1.camX % 180)) : (-(state.t * 40) % 180);
     const labels = ["TROJANS", "IB", "SPIRIT", "MARCH HARE?"];
     for (let i = 0; i < 9; i++) {
@@ -907,10 +931,8 @@
     const bodyY = headY + headH;
     const legY = bodyY + bodyH;
 
-    // shadow
     drawPixelRect(px + 6, py + player.h - 3, player.w - 12, 3, "rgba(0,0,0,0.25)");
 
-    // outline block (tiny)
     drawPixelRect(cx - 1, headY - 1, headW + 2, headH + 2, "rgba(0,0,0,0.28)");
     drawPixelRect(cx, headY, headW, headH, st.skin);
     drawPixelRect(cx, headY, headW, 6, st.hair);
@@ -934,26 +956,21 @@
     drawPixelRect(bx + bodyW - 8, legY + Math.max(0, step), 6, 9, st.pants);
   }
 
-  // nicer carrot sprite
   function drawCarrot(cx, y) {
     const x = Math.round(cx);
     const yy = Math.round(y);
 
-    // outline
     drawPixelRect(x + 3, yy + 3, 10, 10, "rgba(0,0,0,0.25)");
 
-    // leaves
     drawPixelRect(x + 6, yy + 0, 4, 2, "#2FE35F");
     drawPixelRect(x + 5, yy + 2, 6, 2, "#3CFF74");
 
-    // body
     drawPixelRect(x + 4, yy + 4, 8, 2, "#FF9A3A");
     drawPixelRect(x + 5, yy + 6, 6, 2, "#FF8A2A");
     drawPixelRect(x + 6, yy + 8, 4, 2, "#FF7A1A");
     drawPixelRect(x + 7, yy + 10, 2, 2, "#FF5A00");
   }
 
-  // nicer crate sprite
   function drawCrate(x, y, w, h, opened, decoy) {
     const ox = Math.round(x);
     const oy = Math.round(y);
@@ -964,24 +981,19 @@
     const slat = opened ? "rgba(120,70,10,0.18)" : "#B86A12";
     const outline = "rgba(0,0,0,0.30)";
 
-    // outline
     drawPixelRect(ox - 1, oy - 1, ww + 2, hh + 2, outline);
     drawPixelRect(ox, oy, ww, hh, fill);
 
-    // slats
     for (let i = 1; i <= 3; i++) {
       const yy = oy + Math.round((hh * i) / 4);
       drawPixelRect(ox + 5, yy - 2, ww - 10, 3, slat);
     }
 
-    // corner nails
     drawPixelRect(ox + 3, oy + 3, 2, 2, "rgba(255,255,255,0.22)");
     drawPixelRect(ox + ww - 5, oy + 3, 2, 2, "rgba(255,255,255,0.22)");
 
-    // “opened” look
     if (opened) drawPixelRect(ox + 2, oy + 2, ww - 4, 4, "rgba(0,0,0,0.12)");
 
-    // decoy X
     if (opened && decoy) {
       drawPixelRect(ox + ww / 2 - 10, oy + hh / 2 - 2, 20, 4, "rgba(0,0,0,0.22)");
       drawPixelRect(ox + ww / 2 - 2, oy + hh / 2 - 10, 4, 20, "rgba(0,0,0,0.16)");
@@ -1001,7 +1013,6 @@
     drawPixelRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2, "rgba(255,255,255,0.92)");
   }
 
-  // NPC drawings
   function drawJamie() {
     const floorY = VIEW.gh * 0.78;
     const x = Math.round(L1.jamie.x);
@@ -1077,8 +1088,61 @@
   }
 
   function drawSparkles() {
-    for (const s of FX.sparkles) {
-      drawPixelRect(s.x, s.y, s.s, s.s, s.c);
+    for (const s of FX.sparkles) drawPixelRect(s.x, s.y, s.s, s.s, s.c);
+  }
+
+  // CHANGE #3: draw “designs” on filled squares (simple pixel icons)
+  function drawColouringDesign(z) {
+    const x = Math.round(z.x);
+    const y = Math.round(z.y);
+    const w = Math.round(z.w);
+    const h = Math.round(z.h);
+
+    // base fill
+    ctx.fillStyle = z.fill || "rgba(255,255,255,0.85)";
+    ctx.fillRect(x, y, w, h);
+
+    // subtle outline
+    ctx.fillStyle = "rgba(0,0,0,0.15)";
+    ctx.fillRect(x, y, w, 1);
+    ctx.fillRect(x, y + h - 1, w, 1);
+    ctx.fillRect(x, y, 1, h);
+    ctx.fillRect(x + w - 1, y, 1, h);
+
+    // icon colour (contrast)
+    const ink = (z.fill === "#FFFFFF") ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.35)";
+
+    if (z.design === "solid") return;
+
+    ctx.fillStyle = ink;
+
+    if (z.design === "star") {
+      // tiny plus/star
+      ctx.fillRect(x + w / 2 - 1, y + 2, 2, h - 4);
+      ctx.fillRect(x + 2, y + h / 2 - 1, w - 4, 2);
+      ctx.fillRect(x + 3, y + 3, 2, 2);
+      ctx.fillRect(x + w - 5, y + 3, 2, 2);
+      ctx.fillRect(x + 3, y + h - 5, 2, 2);
+      ctx.fillRect(x + w - 5, y + h - 5, 2, 2);
+    } else if (z.design === "tree") {
+      // triangle-ish tree
+      ctx.fillRect(x + w / 2 - 1, y + h - 4, 2, 3); // trunk
+      ctx.fillRect(x + 3, y + 6, w - 6, 2);
+      ctx.fillRect(x + 4, y + 8, w - 8, 2);
+      ctx.fillRect(x + 5, y + 10, w - 10, 2);
+      ctx.fillRect(x + 6, y + 12, w - 12, 2);
+    } else if (z.design === "snowman") {
+      // two stacked circles-ish (blocks)
+      ctx.fillRect(x + w / 2 - 2, y + 5, 4, 4);
+      ctx.fillRect(x + w / 2 - 3, y + 9, 6, 6);
+      // eyes
+      ctx.fillRect(x + w / 2 - 1, y + 6, 1, 1);
+      ctx.fillRect(x + w / 2 + 1, y + 6, 1, 1);
+    } else if (z.design === "bow") {
+      // simple bow: two triangles-ish + knot
+      ctx.fillRect(x + 3, y + h / 2 - 2, 4, 4);
+      ctx.fillRect(x + w - 7, y + h / 2 - 2, 4, 4);
+      ctx.fillRect(x + w / 2 - 1, y + h / 2 - 1, 2, 2);
     }
   }
 
@@ -1089,7 +1153,6 @@
     ctx.fillStyle = `rgba(0,0,0,${0.40 * a})`;
     ctx.fillRect(0, 0, VIEW.gw, 64);
 
-    // maroon/gold capsule
     ctx.fillStyle = `rgba(128,0,32,${0.60 * a})`;
     ctx.fillRect(VIEW.gw * 0.22, 16, VIEW.gw * 0.56, 32);
     ctx.fillStyle = `rgba(255,210,77,${0.50 * a})`;
@@ -1147,15 +1210,12 @@
   function drawLevel1() {
     const floorY = VIEW.gh * 0.78;
 
-    // NEW: spiced hallway background
     drawHallwayBackdrop(floorY);
 
-    // NPC extras behind player
     drawWalkers();
     drawShotLineExtras();
     drawPosers();
 
-    // phase visuals
     if (L1.phase === "carrot") {
       for (const box of L1.boxes) {
         const x = box.x - L1.camX;
@@ -1174,15 +1234,18 @@
     }
 
     if (L1.phase === "colouring") {
-      // page frame + squares
       ctx.fillStyle = "rgba(255,255,255,0.10)";
       ctx.fillRect(VIEW.gw * 0.40 - 122, floorY - 132, 244, 114);
       ctx.fillStyle = "rgba(0,0,0,0.25)";
       ctx.fillRect(VIEW.gw * 0.40 - 118, floorY - 128, 236, 106);
 
       for (const z of L1.colouring.zones) {
-        ctx.fillStyle = z.filled ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.18)";
-        ctx.fillRect(z.x, z.y, z.w, z.h);
+        if (!z.filled) {
+          ctx.fillStyle = "rgba(255,255,255,0.18)";
+          ctx.fillRect(z.x, z.y, z.w, z.h);
+        } else {
+          drawColouringDesign(z);
+        }
       }
 
       ctx.fillStyle = "rgba(255,255,255,0.9)";
@@ -1191,18 +1254,14 @@
       ctx.fillText("Christmas Colouring — fill every square!", VIEW.gw / 2, VIEW.gh * 0.18);
     }
 
-    // NPCs foreground
     drawLateIcons();
     drawJamie();
     drawMichelle();
 
-    // player
     drawChibiPlayer();
 
-    // sparkles overlay
     drawSparkles();
 
-    // HUD
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.font = "700 16px system-ui, Arial";
     ctx.textAlign = "left";
@@ -1223,21 +1282,20 @@
       ctx.fillText(`Hits: ${L1.shotHits} / Attempts: ${L1.shotAttempts}`, VIEW.gw - 16, 82);
     } else if (L1.phase === "colouring") {
       ctx.fillText(`Fill: ${L1.colouring.progress}/${L1.colouring.target}`, VIEW.gw - 16, 82);
+      // show remaining late slips in colouring (nice UX)
+      const rem = Math.max(0, L1.colouring.lateCap - L1.colouring.lateSpawned);
+      ctx.fillText(`Late slips left: ${rem}`, VIEW.gw - 16, 104);
     }
 
-    // Phase banner
     drawPhaseBanner();
 
-    // Confetti overlay
     drawConfetti();
 
-    // Camera flash overlay
     if (FX.flashT > 0) {
       ctx.fillStyle = `rgba(255,255,255,${Math.min(1, FX.flashT * 8)})`;
       ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
     }
 
-    // Level complete overlay
     if (L1.levelDone) {
       ctx.fillStyle = "rgba(0,0,0,0.55)";
       ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
