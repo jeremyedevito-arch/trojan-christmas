@@ -603,10 +603,7 @@
     }
 
     if (L1.phase === "colouring") {
-      // keep grounded; walk-to-colour
-      player.y = floorY - player.h;
-      player.vy = 0;
-      player.onGround = true;
+      // Allow normal jump physics in colouring (do NOT force y to the floor)
 
       for (const z of L1.colouring.zones) {
         if (z.filled) continue;
@@ -881,9 +878,9 @@
     }
 
     if (state.screen === "level1") {
-      // Jump only in carrot phase
+      // Jump only in carrot and colouring phases
       if (
-        L1.phase === "carrot" &&
+        (L1.phase === "carrot" || L1.phase === "colouring") &&
         (e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") &&
         player.onGround
       ) {
@@ -937,7 +934,7 @@
     }
 
     if (state.screen === "level1") {
-      if (L1.phase === "carrot") {
+      if (L1.phase === "carrot" || L1.phase === "colouring") {
         // middle tap to jump
         if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
           if (player.onGround) { player.vy = -PHYS.jumpV; player.onGround = false; SFX.jump(); }
