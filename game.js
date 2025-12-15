@@ -518,7 +518,7 @@
 
   L1.colouring.zones = zones;
   L1.colouring.progress = 0;
-  L1.colouring.target = Math.max(16, Math.floor(zones.length * 0.70)); // slightly easier since it's on the floor
+  L1.colouring.target = zones.length; // must fill every square
   L1.colouring.done = false;
 }
   
