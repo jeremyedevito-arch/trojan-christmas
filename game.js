@@ -33,7 +33,6 @@
     const w = window.innerWidth;
     const h = window.innerHeight;
 
-    // internal resolution: smaller on phones so game looks bigger
     const phone = Math.min(w, h) <= 520;
     VIEW.gw = phone ? 560 : 960;
     VIEW.gh = phone ? 315 : 540;
@@ -173,13 +172,13 @@
     if (ambience) return;
 
     const master = audioCtx.createGain();
-    master.gain.value = 0.020;
+    master.gain.value = 0.018;
 
     const dur = 2.0;
     const size = Math.floor(audioCtx.sampleRate * dur);
     const buf = audioCtx.createBuffer(1, size, audioCtx.sampleRate);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < size; i++) d[i] = (Math.random() * 2 - 1) * 0.35;
+    for (let i = 0; i < size; i++) d[i] = (Math.random() * 2 - 1) * 0.30;
 
     const src = audioCtx.createBufferSource();
     src.buffer = buf;
@@ -187,12 +186,12 @@
 
     const bp1 = audioCtx.createBiquadFilter();
     bp1.type = "bandpass";
-    bp1.frequency.value = 520;
+    bp1.frequency.value = 420;
     bp1.Q.value = 0.7;
 
     const bp2 = audioCtx.createBiquadFilter();
     bp2.type = "bandpass";
-    bp2.frequency.value = 950;
+    bp2.frequency.value = 820;
     bp2.Q.value = 0.9;
 
     const mix1 = audioCtx.createGain();
@@ -209,11 +208,11 @@
     lfo.connect(lfoGain);
 
     const amp = audioCtx.createGain();
-    amp.gain.value = 0.035;
+    amp.gain.value = 0.033;
     lfoGain.connect(amp.gain);
 
     const comp = audioCtx.createDynamicsCompressor();
-    comp.threshold.value = -28;
+    comp.threshold.value = -30;
     comp.ratio.value = 6;
 
     src.connect(bp1);
@@ -267,11 +266,27 @@
     style: CHAR_STYLE.Holli,
   };
 
-  // Confetti particles (end-of-level)
+  // FX
   const FX = {
     confetti: [],
-    flashT: 0, // camera flash overlay
+    flashT: 0,
+    sparkles: [], // small “pop” particles for pickups
   };
+
+  function spawnSparkles(x, y, n = 10) {
+    for (let i = 0; i < n; i++) {
+      FX.sparkles.push({
+        x: x + (Math.random() * 16 - 8),
+        y: y + (Math.random() * 12 - 6),
+        vx: (Math.random() * 2 - 1) * 130,
+        vy: -60 - Math.random() * 160,
+        g: 680 + Math.random() * 260,
+        life: 0.45 + Math.random() * 0.25,
+        s: 2 + Math.floor(Math.random() * 2),
+        c: Math.random() < 0.5 ? "rgba(255,255,255,0.95)" : (Math.random() < 0.5 ? "#FFD24D" : "#FF5EA8"),
+      });
+    }
+  }
 
   function spawnConfettiBurst() {
     const cx = VIEW.gw * 0.50;
@@ -299,6 +314,10 @@
     timeInLevel: 0,
     phaseStartT: 0,
     levelDone: false,
+
+    // Phase transition banner
+    bannerT: 0,
+    bannerText: "",
 
     // Phase 1
     boxes: [],
@@ -331,10 +350,18 @@
 
     walkers: [],
     nextWalkerT: 1.0,
+
+    // Easter egg posters
+    posterSeed: 0,
   };
 
   function clamp(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v));
+  }
+
+  function showPhaseBanner(text) {
+    L1.bannerText = text;
+    L1.bannerT = 1.35;
   }
 
   function resetLevel1() {
@@ -344,6 +371,10 @@
     L1.timeInLevel = 0;
     L1.phaseStartT = 0;
     L1.levelDone = false;
+
+    L1.bannerT = 0;
+    L1.bannerText = "";
+    L1.posterSeed = Math.random() * 9999;
 
     L1.boxes = [];
     L1.carrots = [];
@@ -374,6 +405,7 @@
 
     FX.confetti = [];
     FX.flashT = 0;
+    FX.sparkles = [];
 
     player.x = 140;
     player.y = 0;
@@ -381,6 +413,8 @@
     player.vy = 0;
     player.onGround = false;
     player.facing = 1;
+
+    showPhaseBanner("CARROT IN A BOX!");
   }
 
   function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
@@ -393,8 +427,8 @@
     while (L1.nextBoxX < spawnToX) {
       const w = 52 + Math.floor(Math.random() * 18);
       const h = 32 + Math.floor(Math.random() * 12);
-      const x = L1.nextBoxX; // world x
-      const y = floorY - h;  // screen y
+      const x = L1.nextBoxX;
+      const y = floorY - h;
 
       const decoy = Math.random() < 0.20;
       const hasCarrot = !decoy && Math.random() < 0.30;
@@ -413,8 +447,8 @@
 
     if (box.hasCarrot) {
       L1.carrots.push({
-        x: box.x + box.w / 2 - 8, // world x
-        y: box.y - 10,            // screen y
+        x: box.x + box.w / 2 - 8,
+        y: box.y - 10,
         w: 16,
         h: 12,
         vy: -420,
@@ -436,6 +470,7 @@
         c.alive = false;
         L1.score += 100;
         SFX.collect();
+        spawnSparkles(player.x + player.w * 0.5, player.y + 10, 12);
       }
     }
     L1.carrots = L1.carrots.filter(c => c.alive);
@@ -450,6 +485,7 @@
     L1.shotAttempts = 0;
     L1.shotCooldown = 0;
     L1.cup = { x: VIEW.gw - 92, y: 96, w: 30, h: 18 };
+    showPhaseBanner("IMPOSSIBLE SHOT!");
   }
 
   function fireShot() {
@@ -503,6 +539,7 @@
         L1.shotHits += 1;
         L1.score += 250;
         SFX.swish();
+        spawnSparkles(L1.cup.x + L1.cup.w * 0.5, L1.cup.y + 6, 14);
       }
 
       if (b.x < -40 || b.x > VIEW.gw + 60 || b.y > VIEW.gh + 60) b.alive = false;
@@ -520,7 +557,6 @@
 
     const floorY = VIEW.gh * 0.78;
 
-    // On-floor colouring grid
     const cols = 12;
     const rows = 6;
     const cell = 18;
@@ -549,13 +585,14 @@
 
     L1.colouring.zones = zones;
     L1.colouring.progress = 0;
-    L1.colouring.target = zones.length; // MUST fill all squares
+    L1.colouring.target = zones.length;
     L1.colouring.done = false;
+
+    showPhaseBanner("CHRISTMAS COLOURING!");
   }
 
-  // -------------------- NPCs: Jamie, Michelle, students --------------------
+  // -------------------- NPCs --------------------
   function spawnLateIcon() {
-    // late slip icon spawns overhead and drifts down a bit
     L1.lateIcons.push({
       x: 120 + Math.random() * (VIEW.gw * 0.45 - 120),
       y: 70 + Math.random() * 80,
@@ -568,17 +605,14 @@
   function updateNPCs(dt) {
     const floorY = VIEW.gh * 0.78;
 
-    // Jamie Teed: slow patrol in the hallway lane
     const j = L1.jamie;
     j.x += j.dir * j.speed * dt;
     if (j.x < 120) { j.x = 120; j.dir = 1; }
     if (j.x > VIEW.gw * 0.50) { j.x = VIEW.gw * 0.50; j.dir = -1; }
     if (j.clipT > 0) j.clipT -= dt;
 
-    // Late work icons
     L1.nextLateT -= dt;
     if (L1.nextLateT <= 0) {
-      // more frequent during colouring
       L1.nextLateT = (L1.phase === "colouring") ? 0.9 + Math.random() * 0.9 : 1.3 + Math.random() * 1.5;
       spawnLateIcon();
     }
@@ -586,20 +620,20 @@
     for (const ic of L1.lateIcons) {
       ic.t += dt;
       ic.y += ic.vy * dt;
-      if (ic.y > floorY - 40) ic.vy = -Math.abs(ic.vy) * 0.25; // little bounce
+      if (ic.y > floorY - 40) ic.vy = -Math.abs(ic.vy) * 0.25;
 
-      // collected by player (feels like "delivering" late work)
       if (rectsOverlap(player.x, player.y, player.w, player.h, ic.x, ic.y, 12, 14)) {
         ic.alive = false;
         L1.score += 60;
-        j.clipT = 0.45; // clipboard briefly fills
+        j.clipT = 0.45;
         SFX.tick();
+        spawnSparkles(player.x + player.w * 0.5, player.y + 10, 10);
       }
       if (ic.t > 7) ic.alive = false;
     }
     L1.lateIcons = L1.lateIcons.filter(a => a.alive);
 
-    // Michelle Legere: occasional camera cameo (visual)
+    // Michelle cameo
     L1.nextMichelleT -= dt;
     if (L1.nextMichelleT <= 0 && !L1.michelle.active) {
       L1.nextMichelleT = 8 + Math.random() * 10;
@@ -607,7 +641,6 @@
       L1.michelle.t = 0;
       L1.michelle.x = VIEW.gw * (0.55 + Math.random() * 0.35);
 
-      // spawn some posers
       L1.posers = [];
       const n = 2 + Math.floor(Math.random() * 3);
       for (let i = 0; i < n; i++) {
@@ -619,7 +652,6 @@
         });
       }
 
-      // flash + shutter
       FX.flashT = 0.12;
       SFX.shutter();
     }
@@ -635,7 +667,7 @@
     }
     L1.posers = L1.posers.filter(p => p.alive);
 
-    // Extras: occasional hallway walkers (silhouettes)
+    // Walkers
     L1.nextWalkerT -= dt;
     if (L1.nextWalkerT <= 0 && L1.phase !== "shot") {
       L1.nextWalkerT = 0.8 + Math.random() * 1.6;
@@ -655,12 +687,10 @@
     }
     L1.walkers = L1.walkers.filter(w => w.alive);
 
-    // Flash overlay timer
     if (FX.flashT > 0) FX.flashT -= dt;
   }
 
   function updateFX(dt) {
-    // Confetti physics
     for (const p of FX.confetti) {
       p.t += dt;
       p.vy += p.g * dt;
@@ -669,6 +699,14 @@
       p.life -= dt;
     }
     FX.confetti = FX.confetti.filter(p => p.life > 0 && p.y < VIEW.gh + 80);
+
+    for (const s of FX.sparkles) {
+      s.vy += s.g * dt;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.life -= dt;
+    }
+    FX.sparkles = FX.sparkles.filter(s => s.life > 0);
   }
 
   // -------------------- Update --------------------
@@ -676,14 +714,15 @@
     const floorY = VIEW.gh * 0.78;
     L1.timeInLevel += dt;
 
-    // Phase transitions
+    // phase transitions
     if (L1.phase === "carrot" && L1.timeInLevel > 40) initShotPhase();
     if (L1.phase === "shot" && (L1.timeInLevel - L1.phaseStartT) > 30) initColouringPhase();
 
-    // Camera scroll only in carrot phase
+    // banner timer
+    if (L1.bannerT > 0) L1.bannerT -= dt;
+
     if (L1.phase === "carrot") L1.camX += L1.speed * dt;
 
-    // Movement input
     const left = touch.left || keys.has("ArrowLeft") || keys.has("a") || keys.has("A");
     const right = touch.right || keys.has("ArrowRight") || keys.has("d") || keys.has("D");
 
@@ -694,15 +733,12 @@
     if (player.vx < -5) player.facing = -1;
     else if (player.vx > 5) player.facing = 1;
 
-    // horizontal
     player.x = clamp(player.x + player.vx * dt, 60, VIEW.gw * 0.55);
 
-    // vertical physics
     const prevY = player.y;
     player.vy += PHYS.gravity * dt;
     player.y += player.vy * dt;
 
-    // floor
     if (player.y + player.h >= floorY) {
       player.y = floorY - player.h;
       player.vy = 0;
@@ -711,16 +747,13 @@
       player.onGround = false;
     }
 
-    // NPCs + FX always present in Level 1
     updateNPCs(dt);
     updateFX(dt);
 
-    // Phase-specific mechanics
     if (L1.phase === "carrot") {
       spawnBoxesAhead(floorY);
       updateCarrots(dt, floorY);
 
-      // land on boxes to open
       for (const box of L1.boxes) {
         const sx = box.x - L1.camX;
         if (sx < -160 || sx > VIEW.gw + 160) continue;
@@ -740,7 +773,6 @@
     }
 
     if (L1.phase === "shot") {
-      // keep grounded for throwing
       player.y = floorY - player.h;
       player.vy = 0;
       player.onGround = true;
@@ -748,14 +780,13 @@
     }
 
     if (L1.phase === "colouring") {
-      // Jump is allowed (we do NOT pin player to floor here)
-
       for (const z of L1.colouring.zones) {
         if (z.filled) continue;
         if (rectsOverlap(player.x, player.y, player.w, player.h, z.x, z.y, z.w, z.h)) {
           z.filled = true;
           L1.colouring.progress += 1;
           if ((L1.colouring.progress % 3) === 0) SFX.tick();
+          spawnSparkles(z.x + z.w * 0.5, z.y + z.h * 0.5, 6);
         }
       }
 
@@ -764,13 +795,11 @@
         L1.levelDone = true;
         L1.score += 500;
 
-        // Ding-ding + confetti!
         SFX.dingding();
         spawnConfettiBurst();
       }
     }
 
-    // baseline score
     L1.score += Math.floor(dt * 2);
   }
 
@@ -795,6 +824,73 @@
     ctx.restore();
   }
 
+  // ---- “spiced” hallway background ----
+  function drawHallwayBackdrop(floorY) {
+    // bright arcade gradient blocks
+    drawPixelRect(0, 0, VIEW.gw, VIEW.gh, "#07162A");
+    drawPixelRect(0, 0, VIEW.gw, floorY, "#0A1E36");
+    drawPixelRect(0, 40, VIEW.gw, 2, "rgba(255,255,255,0.06)");
+
+    // maroon banner strip near top
+    drawPixelRect(0, 10, VIEW.gw, 16, "rgba(128,0,32,0.20)");
+    drawPixelRect(0, 26, VIEW.gw, 2, "rgba(255,210,77,0.18)");
+
+    // garland + lights
+    const t = state.t * 1.2;
+    const garY = 34;
+    for (let i = 0; i < 28; i++) {
+      const x = i * (VIEW.gw / 27);
+      const wob = Math.round(Math.sin(t + i * 0.7) * 2);
+      drawPixelRect(x - 1, garY + wob, 3, 3, "rgba(255,255,255,0.10)");
+      const lit = (Math.sin(t * 2.2 + i) > 0.2);
+      drawPixelRect(x - 1, garY + 6 + wob, 3, 3, lit ? "#FFD24D" : "rgba(255,255,255,0.20)");
+    }
+
+    // floor tiles
+    drawPixelRect(0, floorY, VIEW.gw, VIEW.gh - floorY, "rgba(255,255,255,0.10)");
+    for (let i = 0; i < 28; i++) {
+      const x = i * 36 - (L1.phase === "carrot" ? (L1.camX * 0.35 % 36) : 0);
+      drawPixelRect(x, floorY + 18, 2, VIEW.gh - floorY, "rgba(0,0,0,0.16)");
+    }
+
+    // locker rows (parallax)
+    const baseX = (L1.phase === "carrot") ? (-(L1.camX * 0.55) % 110) : (-(state.t * 30) % 110);
+    const lockerY = floorY - 140;
+    for (let i = 0; i < 14; i++) {
+      const x = baseX + i * 110 - 20;
+      drawPixelRect(x, lockerY, 86, 132, "rgba(255,255,255,0.08)");
+      drawPixelRect(x + 2, lockerY + 2, 82, 128, "rgba(0,0,0,0.28)");
+
+      // locker “door” accent
+      drawPixelRect(x + 8, lockerY + 10, 70, 4, "rgba(255,255,255,0.08)");
+      drawPixelRect(x + 70, lockerY + 36, 6, 10, "rgba(255,255,255,0.08)");
+    }
+
+    // windows
+    for (let i = 0; i < 6; i++) {
+      const wx = 40 + i * 150 - ((L1.phase === "carrot") ? (L1.camX * 0.20 % 150) : 0);
+      drawPixelRect(wx, 64, 54, 46, "rgba(255,255,255,0.06)");
+      drawPixelRect(wx + 3, 67, 48, 40, "rgba(0,0,0,0.35)");
+      drawPixelRect(wx + 6, 70, 42, 10, "rgba(77,163,255,0.18)");
+    }
+
+    // posters (with a couple Easter egg labels)
+    const pBase = (L1.phase === "carrot") ? (-(L1.camX % 180)) : (-(state.t * 40) % 180);
+    const labels = ["TROJANS", "IB", "SPIRIT", "MARCH HARE?"];
+    for (let i = 0; i < 9; i++) {
+      const x = pBase + i * 180 - 40;
+      const y = 120 + (i % 3) * 70;
+      drawPixelRect(x, y, 28, 40, "rgba(255,255,255,0.07)");
+      drawPixelRect(x + 3, y + 3, 22, 34, "rgba(0,0,0,0.35)");
+      if (i % 3 === 0) {
+        ctx.fillStyle = "rgba(255,210,77,0.35)";
+        ctx.font = "900 10px system-ui, Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(labels[i % labels.length], x + 14, y + 24);
+      }
+    }
+  }
+
   function drawChibiPlayer() {
     const st = player.style || CHAR_STYLE.Holli;
     const speedMag = Math.min(1, Math.abs(player.vx) / PHYS.moveSpeed);
@@ -814,11 +910,11 @@
     // shadow
     drawPixelRect(px + 6, py + player.h - 3, player.w - 12, 3, "rgba(0,0,0,0.25)");
 
-    // head + hair
+    // outline block (tiny)
+    drawPixelRect(cx - 1, headY - 1, headW + 2, headH + 2, "rgba(0,0,0,0.28)");
     drawPixelRect(cx, headY, headW, headH, st.skin);
     drawPixelRect(cx, headY, headW, 6, st.hair);
 
-    // eyes
     const eyeY = headY + 8;
     if (player.facing === 1) {
       drawPixelRect(cx + 10, eyeY, 2, 2, "#1A1A1A");
@@ -828,47 +924,80 @@
       drawPixelRect(cx + 6, eyeY, 2, 2, "#1A1A1A");
     }
 
-    // body
     const bx = px + Math.round((player.w - bodyW) / 2);
+    drawPixelRect(bx - 1, bodyY - 1, bodyW + 2, bodyH + 2, "rgba(0,0,0,0.28)");
     drawPixelRect(bx, bodyY, bodyW, bodyH, st.shirt);
     drawPixelRect(bx, bodyY + bodyH - 4, bodyW, 4, st.pants);
 
-    // legs
     const step = Math.round(Math.sin(state.t * 14) * 2 * speedMag);
     drawPixelRect(bx + 2, legY + Math.max(0, -step), 6, 9, st.pants);
     drawPixelRect(bx + bodyW - 8, legY + Math.max(0, step), 6, 9, st.pants);
   }
 
+  // nicer carrot sprite
   function drawCarrot(cx, y) {
     const x = Math.round(cx);
     const yy = Math.round(y);
-    drawPixelRect(x + 6, yy + 0, 4, 2, "#3CFF74");
-    drawPixelRect(x + 5, yy + 2, 6, 2, "#2FE35F");
-    drawPixelRect(x + 4, yy + 4, 8, 2, "#FF8A2A");
-    drawPixelRect(x + 5, yy + 6, 6, 2, "#FF7A1A");
-    drawPixelRect(x + 6, yy + 8, 4, 2, "#FF6A0A");
+
+    // outline
+    drawPixelRect(x + 3, yy + 3, 10, 10, "rgba(0,0,0,0.25)");
+
+    // leaves
+    drawPixelRect(x + 6, yy + 0, 4, 2, "#2FE35F");
+    drawPixelRect(x + 5, yy + 2, 6, 2, "#3CFF74");
+
+    // body
+    drawPixelRect(x + 4, yy + 4, 8, 2, "#FF9A3A");
+    drawPixelRect(x + 5, yy + 6, 6, 2, "#FF8A2A");
+    drawPixelRect(x + 6, yy + 8, 4, 2, "#FF7A1A");
     drawPixelRect(x + 7, yy + 10, 2, 2, "#FF5A00");
   }
 
+  // nicer crate sprite
   function drawCrate(x, y, w, h, opened, decoy) {
-    const base = opened ? "rgba(255,214,120,0.25)" : "#FFB74A";
-    const dark = opened ? "rgba(120,70,10,0.20)" : "#B86A12";
-    drawPixelRect(x, y, w, h, base);
+    const ox = Math.round(x);
+    const oy = Math.round(y);
+    const ww = Math.round(w);
+    const hh = Math.round(h);
+
+    const fill = opened ? "rgba(255,214,120,0.20)" : "#FFB74A";
+    const slat = opened ? "rgba(120,70,10,0.18)" : "#B86A12";
+    const outline = "rgba(0,0,0,0.30)";
+
+    // outline
+    drawPixelRect(ox - 1, oy - 1, ww + 2, hh + 2, outline);
+    drawPixelRect(ox, oy, ww, hh, fill);
+
+    // slats
     for (let i = 1; i <= 3; i++) {
-      const yy = y + (h * i) / 4;
-      drawPixelRect(x + 6, yy - 2, w - 12, 3, dark);
+      const yy = oy + Math.round((hh * i) / 4);
+      drawPixelRect(ox + 5, yy - 2, ww - 10, 3, slat);
     }
-    if (opened && decoy) drawPixelRect(x + w / 2 - 10, y + h / 2 - 2, 20, 4, "rgba(0,0,0,0.25)");
+
+    // corner nails
+    drawPixelRect(ox + 3, oy + 3, 2, 2, "rgba(255,255,255,0.22)");
+    drawPixelRect(ox + ww - 5, oy + 3, 2, 2, "rgba(255,255,255,0.22)");
+
+    // “opened” look
+    if (opened) drawPixelRect(ox + 2, oy + 2, ww - 4, 4, "rgba(0,0,0,0.12)");
+
+    // decoy X
+    if (opened && decoy) {
+      drawPixelRect(ox + ww / 2 - 10, oy + hh / 2 - 2, 20, 4, "rgba(0,0,0,0.22)");
+      drawPixelRect(ox + ww / 2 - 2, oy + hh / 2 - 10, 4, 20, "rgba(0,0,0,0.16)");
+    }
   }
 
   function drawCup() {
     const c = L1.cup;
+    drawPixelRect(c.x - 1, c.y - 1, c.w + 2, c.h + 2, "rgba(0,0,0,0.28)");
     drawPixelRect(c.x, c.y, c.w, c.h, "rgba(255,255,255,0.88)");
     drawPixelRect(c.x + 3, c.y + 3, c.w - 6, c.h - 6, "rgba(0,0,0,0.35)");
     drawPixelRect(c.x - 2, c.y - 2, c.w + 4, 3, "rgba(255,255,255,0.92)");
   }
 
   function drawBall(b) {
+    drawPixelRect(b.x - b.r - 1, b.y - b.r - 1, b.r * 2 + 2, b.r * 2 + 2, "rgba(0,0,0,0.28)");
     drawPixelRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2, "rgba(255,255,255,0.92)");
   }
 
@@ -878,19 +1007,14 @@
     const x = Math.round(L1.jamie.x);
     const y = Math.round(floorY - 42);
 
-    // body
-    drawPixelRect(x, y + 16, 16, 20, "#FFD24D"); // warm sweater
-    drawPixelRect(x, y + 30, 16, 6, "#2B2B2B");  // skirt/pants
-    // head + hair
+    drawPixelRect(x, y + 16, 16, 20, "#FFD24D");
+    drawPixelRect(x, y + 30, 16, 6, "#2B2B2B");
     drawPixelRect(x, y, 16, 16, "#FFD2B5");
     drawPixelRect(x, y, 16, 6, "#F2D16B");
 
-    // clipboard (fills briefly)
     const clipFill = L1.jamie.clipT > 0 ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.35)";
     drawPixelRect(x + 18, y + 18, 10, 14, clipFill);
     drawPixelRect(x + 19, y + 20, 8, 2, "rgba(0,0,0,0.25)");
-
-    // occasional tiny “tick” animation line
     if (L1.jamie.clipT > 0) drawPixelRect(x + 20, y + 26, 6, 2, "rgba(0,0,0,0.25)");
   }
 
@@ -898,7 +1022,7 @@
     for (const ic of L1.lateIcons) {
       const x = Math.round(ic.x);
       const y = Math.round(ic.y);
-      // “late slip” tiny paper icon
+      drawPixelRect(x - 1, y - 1, 14, 16, "rgba(0,0,0,0.20)");
       drawPixelRect(x, y, 12, 14, "rgba(255,255,255,0.85)");
       drawPixelRect(x + 2, y + 3, 8, 2, "rgba(0,0,0,0.25)");
       drawPixelRect(x + 2, y + 7, 6, 2, "rgba(0,0,0,0.18)");
@@ -911,11 +1035,9 @@
     const x = Math.round(L1.michelle.x);
     const y = Math.round(floorY - 44);
 
-    // simple tiny camera-holder
     drawPixelRect(x, y + 18, 14, 18, "#6B3B2A");
     drawPixelRect(x, y, 14, 16, "#FFD2B5");
-    drawPixelRect(x, y, 14, 5, "#FFD24D"); // blonde-ish hair band
-    // camera
+    drawPixelRect(x, y, 14, 5, "#FFD24D");
     drawPixelRect(x + 16, y + 18, 12, 8, "rgba(255,255,255,0.80)");
     drawPixelRect(x + 19, y + 20, 4, 4, "rgba(0,0,0,0.45)");
   }
@@ -924,7 +1046,6 @@
     for (const p of L1.posers) {
       const x = Math.round(p.x);
       const y = Math.round(p.y);
-      // “pose” = arms up
       drawPixelRect(x, y, 10, 18, "rgba(255,255,255,0.20)");
       drawPixelRect(x - 3, y + 4, 3, 3, "rgba(255,255,255,0.18)");
       drawPixelRect(x + 10, y + 4, 3, 3, "rgba(255,255,255,0.18)");
@@ -943,7 +1064,6 @@
   function drawShotLineExtras() {
     if (L1.phase !== "shot") return;
     const floorY = VIEW.gh * 0.78;
-    // small line of students near cup
     for (let i = 0; i < 5; i++) {
       const x = Math.round(L1.cup.x - 50 - i * 18);
       const y = Math.round(floorY - 30);
@@ -953,9 +1073,32 @@
   }
 
   function drawConfetti() {
-    for (const p of FX.confetti) {
-      drawPixelRect(p.x, p.y, p.s, p.s, p.c);
+    for (const p of FX.confetti) drawPixelRect(p.x, p.y, p.s, p.s, p.c);
+  }
+
+  function drawSparkles() {
+    for (const s of FX.sparkles) {
+      drawPixelRect(s.x, s.y, s.s, s.s, s.c);
     }
+  }
+
+  function drawPhaseBanner() {
+    if (L1.bannerT <= 0 || !L1.bannerText) return;
+
+    const a = Math.min(1, L1.bannerT * 1.2);
+    ctx.fillStyle = `rgba(0,0,0,${0.40 * a})`;
+    ctx.fillRect(0, 0, VIEW.gw, 64);
+
+    // maroon/gold capsule
+    ctx.fillStyle = `rgba(128,0,32,${0.60 * a})`;
+    ctx.fillRect(VIEW.gw * 0.22, 16, VIEW.gw * 0.56, 32);
+    ctx.fillStyle = `rgba(255,210,77,${0.50 * a})`;
+    ctx.fillRect(VIEW.gw * 0.22, 46, VIEW.gw * 0.56, 2);
+
+    ctx.fillStyle = `rgba(255,255,255,${0.95 * a})`;
+    ctx.font = "900 18px system-ui, Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(L1.bannerText, VIEW.gw / 2, 38);
   }
 
   // -------------------- Screens --------------------
@@ -1004,12 +1147,8 @@
   function drawLevel1() {
     const floorY = VIEW.gh * 0.78;
 
-    // background
-    ctx.fillStyle = "#06101A";
-    ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
-
-    // floor
-    drawPixelRect(0, floorY, VIEW.gw, VIEW.gh - floorY, "rgba(255,255,255,0.10)");
+    // NEW: spiced hallway background
+    drawHallwayBackdrop(floorY);
 
     // NPC extras behind player
     drawWalkers();
@@ -1036,8 +1175,10 @@
 
     if (L1.phase === "colouring") {
       // page frame + squares
-      ctx.fillStyle = "rgba(255,255,255,0.12)";
-      ctx.fillRect(VIEW.gw * 0.40 - 120, floorY - 130, 240, 110);
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      ctx.fillRect(VIEW.gw * 0.40 - 122, floorY - 132, 244, 114);
+      ctx.fillStyle = "rgba(0,0,0,0.25)";
+      ctx.fillRect(VIEW.gw * 0.40 - 118, floorY - 128, 236, 106);
 
       for (const z of L1.colouring.zones) {
         ctx.fillStyle = z.filled ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.18)";
@@ -1058,6 +1199,9 @@
     // player
     drawChibiPlayer();
 
+    // sparkles overlay
+    drawSparkles();
+
     // HUD
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.font = "700 16px system-ui, Arial";
@@ -1070,7 +1214,7 @@
     ctx.fillText(`Back: Esc`, VIEW.gw - 16, 38);
 
     ctx.font = "700 13px system-ui, Arial";
-    ctx.fillStyle = "rgba(255,255,255,0.70)";
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
     ctx.textAlign = "right";
     if (L1.phase === "carrot") {
       ctx.fillText(`Phone: hold left/right • tap middle to jump`, VIEW.gw - 16, 60);
@@ -1080,6 +1224,9 @@
     } else if (L1.phase === "colouring") {
       ctx.fillText(`Fill: ${L1.colouring.progress}/${L1.colouring.target}`, VIEW.gw - 16, 82);
     }
+
+    // Phase banner
+    drawPhaseBanner();
 
     // Confetti overlay
     drawConfetti();
@@ -1132,7 +1279,6 @@
     }
 
     if (state.screen === "level1") {
-      // Jump in carrot OR colouring
       if (
         (L1.phase === "carrot" || L1.phase === "colouring") &&
         (e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") &&
@@ -1143,7 +1289,6 @@
         SFX.jump();
       }
 
-      // Throw in shot phase
       if (L1.phase === "shot" && e.key === "Enter") fireShot();
 
       if (e.key === "Escape") {
@@ -1187,7 +1332,6 @@
 
     if (state.screen === "level1") {
       if (L1.phase === "carrot" || L1.phase === "colouring") {
-        // middle tap to jump
         if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
           if (player.onGround) { player.vy = -PHYS.jumpV; player.onGround = false; SFX.jump(); }
           clearTouch();
@@ -1195,7 +1339,6 @@
           setTouchFromGX(gx);
         }
       } else if (L1.phase === "shot") {
-        // top-right tap to throw
         if (gx > VIEW.gw * 0.66 && gy < VIEW.gh * 0.35) {
           fireShot();
         } else {
@@ -1208,8 +1351,8 @@
   canvas.addEventListener("pointermove", (e) => {
     if (state.screen !== "level1") return;
     if (e.buttons !== 1) return;
-    const { gx, gy } = screenToGame(e.clientX, e.clientY);
-    if (!inGameBounds(gx, gy)) return;
+    const { gx } = screenToGame(e.clientX, e.clientY);
+    if (!inGameBounds(gx, 1)) return;
     setTouchFromGX(gx);
   });
 
@@ -1227,7 +1370,6 @@
 
     clearScreen();
 
-    // draw in letterboxed game space
     ctx.save();
     ctx.translate(VIEW.ox, VIEW.oy);
     ctx.scale(VIEW.scale, VIEW.scale);
