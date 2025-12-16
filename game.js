@@ -1091,6 +1091,181 @@
     drawPixelRect(bx + 2, legY + Math.max(0, -step), 6, 9, st.pants);
     drawPixelRect(bx + bodyW - 8, legY + Math.max(0, step), 6, 9, st.pants);
   }
+  function drawCarrot(cx, y) {
+    const x = Math.round(cx);
+    const yy = Math.round(y);
+
+    drawPixelRect(x + 3, yy + 3, 10, 10, "rgba(0,0,0,0.25)");
+
+    drawPixelRect(x + 6, yy + 0, 4, 2, "#2FE35F");
+    drawPixelRect(x + 5, yy + 2, 6, 2, "#3CFF74");
+
+    drawPixelRect(x + 4, yy + 4, 8, 2, "#FF9A3A");
+    drawPixelRect(x + 5, yy + 6, 6, 2, "#FF8A2A");
+    drawPixelRect(x + 6, yy + 8, 4, 2, "#FF7A1A");
+    drawPixelRect(x + 7, yy + 10, 2, 2, "#FF5A00");
+  }
+
+  function drawCrate(x, y, w, h, opened, decoy) {
+    const ox = Math.round(x);
+    const oy = Math.round(y);
+    const ww = Math.round(w);
+    const hh = Math.round(h);
+
+    const fill = opened ? "rgba(255,214,120,0.20)" : "#FFB74A";
+    const slat = opened ? "rgba(120,70,10,0.18)" : "#B86A12";
+    const outline = "rgba(0,0,0,0.30)";
+
+    drawPixelRect(ox - 1, oy - 1, ww + 2, hh + 2, outline);
+    drawPixelRect(ox, oy, ww, hh, fill);
+
+    for (let i = 1; i <= 3; i++) {
+      const yy = oy + Math.round((hh * i) / 4);
+      drawPixelRect(ox + 5, yy - 2, ww - 10, 3, slat);
+    }
+
+    drawPixelRect(ox + 3, oy + 3, 2, 2, "rgba(255,255,255,0.22)");
+    drawPixelRect(ox + ww - 5, oy + 3, 2, 2, "rgba(255,255,255,0.22)");
+
+    if (opened) drawPixelRect(ox + 2, oy + 2, ww - 4, 4, "rgba(0,0,0,0.12)");
+
+    if (opened && decoy) {
+      drawPixelRect(ox + ww / 2 - 10, oy + hh / 2 - 2, 20, 4, "rgba(0,0,0,0.22)");
+      drawPixelRect(ox + ww / 2 - 2, oy + hh / 2 - 10, 4, 20, "rgba(0,0,0,0.16)");
+    }
+  }
+
+  function drawCup() {
+    const c = L1.cup;
+    drawPixelRect(c.x - 1, c.y - 1, c.w + 2, c.h + 2, "rgba(0,0,0,0.28)");
+    drawPixelRect(c.x, c.y, c.w, c.h, "rgba(255,255,255,0.88)");
+    drawPixelRect(c.x + 3, c.y + 3, c.w - 6, c.h - 6, "rgba(0,0,0,0.35)");
+    drawPixelRect(c.x - 2, c.y - 2, c.w + 4, 3, "rgba(255,255,255,0.92)");
+  }
+
+  function drawBall(b) {
+    drawPixelRect(b.x - b.r - 1, b.y - b.r - 1, b.r * 2 + 2, b.r * 2 + 2, "rgba(0,0,0,0.28)");
+    drawPixelRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2, "rgba(255,255,255,0.92)");
+  }
+
+  function drawJamie() {
+    const floorY = VIEW.gh * 0.78;
+    const x = Math.round(L1.jamie.x);
+    const y = Math.round(floorY - 42);
+
+    drawPixelRect(x, y + 16, 16, 20, "#FFD24D");
+    drawPixelRect(x, y + 30, 16, 6, "#2B2B2B");
+    drawPixelRect(x, y, 16, 16, "#FFD2B5");
+    drawPixelRect(x, y, 16, 6, "#F2D16B");
+
+    const clipFill = L1.jamie.clipT > 0 ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.35)";
+    drawPixelRect(x + 18, y + 18, 10, 14, clipFill);
+    drawPixelRect(x + 19, y + 20, 8, 2, "rgba(0,0,0,0.25)");
+    if (L1.jamie.clipT > 0) drawPixelRect(x + 20, y + 26, 6, 2, "rgba(0,0,0,0.25)");
+  }
+
+  function drawLateIcons() {
+    for (const ic of L1.lateIcons) {
+      const x = Math.round(ic.x);
+      const y = Math.round(ic.y);
+      drawPixelRect(x - 1, y - 1, 14, 16, "rgba(0,0,0,0.20)");
+      drawPixelRect(x, y, 12, 14, "rgba(255,255,255,0.85)");
+      drawPixelRect(x + 2, y + 3, 8, 2, "rgba(0,0,0,0.25)");
+      drawPixelRect(x + 2, y + 7, 6, 2, "rgba(0,0,0,0.18)");
+    }
+  }
+
+  function drawMichelle() {
+    if (!L1.michelle.active) return;
+    const floorY = VIEW.gh * 0.78;
+    const x = Math.round(L1.michelle.x);
+    const y = Math.round(floorY - 44);
+
+    drawPixelRect(x, y + 18, 14, 18, "#6B3B2A");
+    drawPixelRect(x, y, 14, 16, "#FFD2B5");
+    drawPixelRect(x, y, 14, 5, "#FFD24D");
+    drawPixelRect(x + 16, y + 18, 12, 8, "rgba(255,255,255,0.80)");
+    drawPixelRect(x + 19, y + 20, 4, 4, "rgba(0,0,0,0.45)");
+  }
+
+  function drawPosers() {
+    for (const p of L1.posers) {
+      const x = Math.round(p.x);
+      const y = Math.round(p.y);
+      drawPixelRect(x, y, 10, 18, "rgba(255,255,255,0.20)");
+      drawPixelRect(x - 3, y + 4, 3, 3, "rgba(255,255,255,0.18)");
+      drawPixelRect(x + 10, y + 4, 3, 3, "rgba(255,255,255,0.18)");
+    }
+  }
+
+  function drawWalkers() {
+    for (const w of L1.walkers) {
+      const x = Math.round(w.x);
+      const y = Math.round(w.y);
+      drawPixelRect(x, y, 10, 18, "rgba(255,255,255,0.10)");
+      drawPixelRect(x + 2, y - 6, 6, 6, "rgba(255,255,255,0.10)");
+    }
+  }
+
+  function drawShotLineExtras() {
+    if (L1.phase !== "shot") return;
+    const floorY = VIEW.gh * 0.78;
+    for (let i = 0; i < 5; i++) {
+      const x = Math.round(L1.cup.x - 50 - i * 18);
+      const y = Math.round(floorY - 30);
+      drawPixelRect(x, y, 10, 18, "rgba(255,255,255,0.14)");
+      drawPixelRect(x + 2, y - 6, 6, 6, "rgba(255,255,255,0.14)");
+    }
+  }
+
+  function drawColouringDesign(z) {
+    const x = Math.round(z.x);
+    const y = Math.round(z.y);
+    const w = Math.round(z.w);
+    const h = Math.round(z.h);
+
+    // base fill
+    ctx.fillStyle = z.fill || "rgba(255,255,255,0.85)";
+    ctx.fillRect(x, y, w, h);
+
+    // subtle outline
+    ctx.fillStyle = "rgba(0,0,0,0.15)";
+    ctx.fillRect(x, y, w, 1);
+    ctx.fillRect(x, y + h - 1, w, 1);
+    ctx.fillRect(x, y, 1, h);
+    ctx.fillRect(x + w - 1, y, 1, h);
+
+    // icon colour (contrast)
+    const ink = (z.fill === "#FFFFFF") ? "rgba(0,0,0,0.25)" : "rgba(255,255,255,0.35)";
+    if (z.design === "solid") return;
+
+    ctx.fillStyle = ink;
+
+    if (z.design === "star") {
+      ctx.fillRect(x + w / 2 - 1, y + 2, 2, h - 4);
+      ctx.fillRect(x + 2, y + h / 2 - 1, w - 4, 2);
+      ctx.fillRect(x + 3, y + 3, 2, 2);
+      ctx.fillRect(x + w - 5, y + 3, 2, 2);
+      ctx.fillRect(x + 3, y + h - 5, 2, 2);
+      ctx.fillRect(x + w - 5, y + h - 5, 2, 2);
+    } else if (z.design === "tree") {
+      ctx.fillRect(x + w / 2 - 1, y + h - 4, 2, 3); // trunk
+      ctx.fillRect(x + 3, y + 6, w - 6, 2);
+      ctx.fillRect(x + 4, y + 8, w - 8, 2);
+      ctx.fillRect(x + 5, y + 10, w - 10, 2);
+      ctx.fillRect(x + 6, y + 12, w - 12, 2);
+    } else if (z.design === "snowman") {
+      ctx.fillRect(x + w / 2 - 2, y + 5, 4, 4);
+      ctx.fillRect(x + w / 2 - 3, y + 9, 6, 6);
+      ctx.fillRect(x + w / 2 - 1, y + 6, 1, 1);
+      ctx.fillRect(x + w / 2 + 1, y + 6, 1, 1);
+    } else if (z.design === "bow") {
+      ctx.fillRect(x + 3, y + h / 2 - 2, 4, 4);
+      ctx.fillRect(x + w - 7, y + h / 2 - 2, 4, 4);
+      ctx.fillRect(x + w / 2 - 1, y + h / 2 - 1, 2, 2);
+    }
+  }
+
 
   function drawConfetti() {
     for (const p of FX.confetti) drawPixelRect(p.x, p.y, p.s, p.s, p.c);
@@ -1176,10 +1351,117 @@
 
   // ---- IMPORTANT: Because this is a single paste-and-run file, we include a minimal fail-safe:
   // If you forget to paste your original drawLevel1(), we’ll show a warning screen.
-  function drawLevel1Missing() {
-    drawCenteredText("Level 1 draw functions missing.", VIEW.gh * 0.45, 22, 0.95);
-    drawCenteredText("Paste your original draw helpers + drawLevel1() back in.", VIEW.gh * 0.55, 16, 0.85);
+  
+  function drawLevel1() {
+    const floorY = VIEW.gh * 0.78;
+
+    drawHallwayBackdrop(floorY);
+
+    // NPC extras behind player
+    drawWalkers();
+    drawShotLineExtras();
+    drawPosers();
+
+    // phase visuals
+    if (L1.phase === "carrot") {
+      for (const box of L1.boxes) {
+        const x = box.x - L1.camX;
+        if (x < -160 || x > VIEW.gw + 160) continue;
+        drawCrate(x, box.y, box.w, box.h, box.opened, box.decoy);
+      }
+      for (const c of L1.carrots) {
+        const cx = c.x - L1.camX;
+        drawCarrot(cx, c.y);
+      }
+    }
+
+    if (L1.phase === "shot") {
+      drawCup();
+      for (const b of L1.shots) drawBall(b);
+    }
+
+    if (L1.phase === "colouring") {
+      // page frame
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      ctx.fillRect(VIEW.gw * 0.40 - 122, floorY - 132, 244, 114);
+      ctx.fillStyle = "rgba(0,0,0,0.25)";
+      ctx.fillRect(VIEW.gw * 0.40 - 118, floorY - 128, 236, 106);
+
+      for (const z of L1.colouring.zones) {
+        if (!z.filled) {
+          ctx.fillStyle = "rgba(255,255,255,0.18)";
+          ctx.fillRect(z.x, z.y, z.w, z.h);
+        } else {
+          drawColouringDesign(z);
+        }
+      }
+
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.font = "800 14px system-ui, Arial";
+      ctx.textAlign = "center";
+      ctx.fillText("Christmas Colouring — fill every square!", VIEW.gw / 2, VIEW.gh * 0.18);
+    }
+
+    // NPCs foreground
+    drawLateIcons();
+    drawJamie();
+    drawMichelle();
+
+    // player + FX
+    drawChibiPlayer();
+    drawSparkles();
+
+    // HUD
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.font = "700 16px system-ui, Arial";
+    ctx.textAlign = "left";
+    ctx.fillText(`Level 1 — Hallway Hustle`, 16, 38);
+    ctx.fillText(`Phase: ${L1.phase}`, 16, 60);
+    ctx.fillText(`Score: ${L1.score}`, 16, 82);
+
+    ctx.textAlign = "right";
+    ctx.fillText(`Back: Esc`, VIEW.gw - 16, 38);
+
+    ctx.font = "700 13px system-ui, Arial";
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.textAlign = "right";
+    if (L1.phase === "carrot") {
+      ctx.fillText(`Phone: hold left/right • tap middle to jump`, VIEW.gw - 16, 60);
+    } else if (L1.phase === "shot") {
+      ctx.fillText(`Laptop: Enter to throw • Phone: tap top-right to throw`, VIEW.gw - 16, 60);
+      ctx.fillText(`Hits: ${L1.shotHits} / Attempts: ${L1.shotAttempts}`, VIEW.gw - 16, 82);
+    } else if (L1.phase === "colouring") {
+      ctx.fillText(`Fill: ${L1.colouring.progress}/${L1.colouring.target}`, VIEW.gw - 16, 82);
+      const rem = Math.max(0, L1.colouring.lateCap - L1.colouring.lateSpawned);
+      ctx.fillText(`Late slips left: ${rem}`, VIEW.gw - 16, 104);
+    }
+
+    drawPhaseBanner();
+    drawConfetti();
+
+    if (FX.flashT > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(1, FX.flashT * 8)})`;
+      ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
+    }
+
+    if (L1.levelDone) {
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
+
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.textAlign = "center";
+      ctx.font = "900 28px system-ui, Arial";
+      ctx.fillText("LEVEL 1 COMPLETE!", VIEW.gw / 2, VIEW.gh * 0.42);
+
+      ctx.font = "800 16px system-ui, Arial";
+      ctx.fillText("Nice work — more levels coming soon.", VIEW.gw / 2, VIEW.gh * 0.50);
+
+      ctx.font = "700 13px system-ui, Arial";
+      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.58);
+    }
   }
+
 
   // -------------------- Level 2 draw --------------------
   function drawCoin(x, y, r) {
@@ -1424,7 +1706,7 @@
       // If you pasted your original drawLevel1(), it will run.
       // Otherwise: fail-safe message.
       if (typeof drawLevel1 === "function") drawLevel1();
-      else drawLevel1Missing();
+      else drawLevel1();
     }
     else if (state.screen === "level2") {
       updateLevel2(dt);
