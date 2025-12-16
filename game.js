@@ -960,31 +960,43 @@ const L2 = {
   score: 0,
 
   // Phase control
-  phase: "trek",          // trek (Phase A). Phase B later.
-  phaseT: 0,              // seconds remaining
+  phase: "trek",          // trek (Phase A) -> bus (Phase B)
+  phaseT: 0,              // seconds remaining in current phase
   done: false,
 
   // Auto-scroll + modifiers
-  scrollSpeed: 240,       // world units per second
-  slowT: 0,               // Marcy slow timer
-  slowMul: 0.35,          // movement multiplier during slow
+  scrollSpeed: 240,       // world units per second (Phase A)
+  slowT: 0,               // Marcy slow timer (Phase A)
+  slowMul: 0.35,          // movement multiplier during Marcy slow
 
+  // Phase B movement debuffs
+  slipT: 0,               // snow slip slow
+  techT: 0,               // Chris “tech clutter” slow
+  carryFood: 0,           // how many food items currently being carried (adds weight)
+  deliveredFood: 0,       // total delivered via Gary
 
   // Marcy scheduling (she appears with some Trail Relay posters)
-  nextMarcyN: 2,           // poster index n (every 240 units) where Marcy will appear (n % 3 === 2)
+  nextMarcyN: 2,          // poster index n (every 240 units) where Marcy will appear (n % 3 === 2)
+
   // UI banner
   bannerT: 0,
   bannerText: "",
 
   // World
-  worldLen: 999999,       // endless-ish for now
+  worldLen: 999999,       // endless-ish
   platforms: [],
+
+  // Phase A collectibles
   coins: [],
   coinSpawnT: 0,
-
-  // Donations
   collected: 0,
   stolen: 0,
+
+  // Phase B collectibles / hazards
+  foods: [],
+  foodSpawnT: 0,
+  snow: [],
+  snowSpawnT: 0,
 
   // NPCs (Phase A)
   priam: {
@@ -1005,6 +1017,28 @@ const L2 = {
     posterN: 2,
     anchorX: 0,
   },
+
+  // NPCs (Phase B)
+  gary: {
+    active: false,
+    x: 0, y: 0, w: 34, h: 54,
+    dir: 1,
+    walkT: 0,
+    hiCd: 0,
+  },
+  chris: {
+    active: false,
+    x: 0, y: 0, w: 34, h: 54,
+    dir: -1,
+    walkT: 0,
+    hitCd: 0,
+  },
+  michelle: {
+    active: false,
+    x: 0, y: 0, w: 34, h: 54,
+    seen: false,
+    snapCd: 0,
+  },
 };
 
 function showL2Banner(text) {
@@ -1013,6 +1047,12 @@ function showL2Banner(text) {
 }
 
 function resetLevel2() {
+  // Start fresh at Phase A
+  resetL2PhaseA();
+  showL2Banner("LEVEL 2 — TROJAN TREK!");
+}
+
+function resetL2PhaseA() {
   L2.camX = 0;
   L2.score = 0;
   L2.done = false;
@@ -1022,6 +1062,8 @@ function resetLevel2() {
 
   L2.scrollSpeed = 240;
   L2.slowT = 0;
+  L2.slipT = 0;
+  L2.techT = 0;
 
   L2.bannerT = 0;
   L2.bannerText = "";
@@ -1029,12 +1071,19 @@ function resetLevel2() {
   L2.coins = [];
   L2.coinSpawnT = 0;
 
+  L2.foods = [];
+  L2.foodSpawnT = 0;
+  L2.snow = [];
+  L2.snowSpawnT = 0;
+
   L2.collected = 0;
   L2.stolen = 0;
+  L2.carryFood = 0;
+  L2.deliveredFood = 0;
 
   const floorY = VIEW.gh * 0.78;
 
-  // Simple “floor + a few platforms” (kept from earlier version)
+  // Simple “floor + a few platforms”
   L2.platforms = [
     { x: 0, y: floorY, w: 5000, h: VIEW.gh - floorY }, // floor span
     { x: 320, y: floorY - 78, w: 160, h: 16 },
@@ -1047,7 +1096,7 @@ function resetLevel2() {
     { x: 2700, y: floorY - 150, w: 200, h: 16 },
   ];
 
-  // NPC anchor positions (world coords); they “track” the camera a bit to stay relevant.
+  // Phase A NPC anchor positions
   L2.priam.active = true;
   L2.priam.x = 560;
   L2.priam.y = floorY - L2.priam.h;
@@ -1055,16 +1104,21 @@ function resetLevel2() {
   L2.priam.walkT = 0;
   L2.priam.hitCd = 0;
 
-  
-// Marcy appears with every 2nd or 3rd TRAIL RELAY poster (not always on-screen)
-L2.nextMarcyN = 2; // first TRAIL RELAY poster index (n % 3 === 2)
-L2.marcy.active = false;
-L2.marcy.following = false;
-L2.marcy.followT = 0;
-L2.marcy.walkT = 0;
-L2.marcy.triggerCd = 0;
-L2.marcy.posterN = L2.nextMarcyN;
-L2.marcy.anchorX = 0;
+  // Marcy scheduling (with TRAIL RELAY posters)
+  L2.nextMarcyN = 2;
+  L2.marcy.active = false;
+  L2.marcy.following = false;
+  L2.marcy.followT = 0;
+  L2.marcy.walkT = 0;
+  L2.marcy.triggerCd = 0;
+  L2.marcy.posterN = L2.nextMarcyN;
+  L2.marcy.anchorX = 0;
+
+  // Phase B NPCs off for now
+  L2.gary.active = false;
+  L2.chris.active = false;
+  L2.michelle.active = false;
+  L2.michelle.seen = false;
 
   // Player start
   player.x = 140;
@@ -1077,8 +1131,80 @@ L2.marcy.anchorX = 0;
   FX.confetti = [];
   FX.flashT = 0;
   FX.sparkles = [];
+}
 
-  showL2Banner("LEVEL 2 — TROJAN TREK!");
+function startL2PhaseB() {
+  // Transition into Phase B (Fill the Bus)
+  L2.phase = "bus";
+  L2.phaseT = 45.0;
+
+  // slightly slower overall (heavier items)
+  L2.scrollSpeed = 220;
+  L2.slowT = 0;
+
+  L2.slipT = 0;
+  L2.techT = 0;
+  L2.carryFood = 0;
+  // keep L2.score, keep L2.collected from Phase A
+
+  // clear Phase A bits
+  L2.coins = [];
+  L2.coinSpawnT = 0;
+
+  // init Phase B bits
+  L2.foods = [];
+  L2.foodSpawnT = 0;
+  L2.snow = [];
+  L2.snowSpawnT = 0;
+
+  const floorY = VIEW.gh * 0.78;
+
+  // Reset world/camera for a clean seasonal scene
+  L2.camX = 0;
+
+  // A flatter “runway” for Phase B
+  L2.platforms = [
+    { x: 0, y: floorY, w: 5000, h: VIEW.gh - floorY }, // floor span
+    { x: 520, y: floorY - 90, w: 180, h: 16 },
+    { x: 980, y: floorY - 120, w: 200, h: 16 },
+    { x: 1520, y: floorY - 100, w: 180, h: 16 },
+    { x: 2080, y: floorY - 135, w: 220, h: 16 },
+    { x: 2680, y: floorY - 110, w: 200, h: 16 },
+  ];
+
+  // Turn off Phase A NPCs
+  L2.priam.active = false;
+  L2.marcy.active = false;
+  L2.marcy.following = false;
+
+  // Phase B NPCs
+  L2.gary.active = true;
+  L2.gary.x = 720;
+  L2.gary.y = floorY - L2.gary.h;
+  L2.gary.dir = 1;
+  L2.gary.walkT = 0;
+  L2.gary.hiCd = 0;
+
+  L2.chris.active = true;
+  L2.chris.x = 1200;
+  L2.chris.y = floorY - L2.chris.h;
+  L2.chris.dir = -1;
+  L2.chris.walkT = 0;
+  L2.chris.hitCd = 0;
+
+  L2.michelle.active = false;
+  L2.michelle.seen = false;
+  L2.michelle.snapCd = 0;
+
+  // Player start again
+  player.x = 140;
+  player.y = floorY - player.h;
+  player.vx = 0;
+  player.vy = 0;
+  player.onGround = true;
+  player.facing = 1;
+
+  showL2Banner("PHASE B — FILL THE BUS!");
 }
 
 function resolvePlatforms(prevX, prevY, floorY) {
@@ -1267,6 +1393,144 @@ function updateMarcy(dt, floorY) {
   }
 }
 
+
+function drawFoodItem(x, y) {
+  const xx = Math.round(x);
+  const yy = Math.round(y);
+  // simple “can” sprite
+  drawPixelRect(xx - 7, yy - 9, 14, 18, "rgba(0,0,0,0.25)");
+  drawPixelRect(xx - 6, yy - 8, 12, 16, "#C83A3A");
+  drawPixelRect(xx - 6, yy - 8, 12, 3, "rgba(255,255,255,0.25)");
+  drawPixelRect(xx - 6, yy + 4, 12, 3, "rgba(0,0,0,0.22)");
+  drawPixelRect(xx - 2, yy - 1, 4, 2, "#FFD24D");
+}
+
+function drawSnowPile(x, y, w, h) {
+  const xx = Math.round(x);
+  const yy = Math.round(y);
+  drawPixelRect(xx - 1, yy - 1, w + 2, h + 2, "rgba(0,0,0,0.22)");
+  drawPixelRect(xx, yy, w, h, "rgba(255,255,255,0.75)");
+  drawPixelRect(xx + 2, yy + 2, w - 4, h - 4, "rgba(180,220,255,0.22)");
+}
+
+function spawnL2Food(floorY, dt) {
+  if (L2.done) return;
+  L2.foodSpawnT -= dt;
+  while (L2.foodSpawnT <= 0) {
+    L2.foodSpawnT += 0.40 + Math.random() * 0.25;
+
+    const x = L2.camX + VIEW.gw + 160 + Math.random() * 320;
+    const lane = Math.random();
+    const y =
+      lane < 0.55 ? (floorY - 88) :
+      lane < 0.85 ? (floorY - 138) :
+      (floorY - 188);
+
+    L2.foods.push({ x, y, r: 10, alive: true });
+  }
+
+  const cutoff = L2.camX - 220;
+  if (L2.foods.length > 120) L2.foods = L2.foods.slice(-120);
+  for (const f of L2.foods) if (f.x < cutoff) f.alive = false;
+}
+
+function spawnL2Snow(floorY, dt) {
+  if (L2.done) return;
+  L2.snowSpawnT -= dt;
+  while (L2.snowSpawnT <= 0) {
+    L2.snowSpawnT += 0.75 + Math.random() * 0.55;
+
+    const x = L2.camX + VIEW.gw + 200 + Math.random() * 380;
+    const w = 22 + Math.floor(Math.random() * 18);
+    const h = 16 + Math.floor(Math.random() * 10);
+    const y = floorY - h;
+
+    L2.snow.push({ x, y, w, h, hitCd: 0 });
+  }
+
+  const cutoff = L2.camX - 260;
+  if (L2.snow.length > 80) L2.snow = L2.snow.slice(-80);
+  for (const s of L2.snow) {
+    if (s.x < cutoff) s.hitCd = 99;
+    if (s.hitCd > 0 && s.hitCd < 99) s.hitCd -= dt;
+  }
+}
+
+function updateGary(dt, floorY) {
+  const g = L2.gary;
+  if (!g.active) return;
+
+  g.walkT += dt;
+  const desired = L2.camX + VIEW.gw * 0.60;
+  g.x += (desired - g.x) * Math.min(1, dt * 0.55);
+  g.y = floorY - g.h;
+
+  if (g.hiCd > 0) g.hiCd -= dt;
+
+  const sx = g.x - L2.camX;
+  if (g.hiCd <= 0 && rectsOverlap(player.x, player.y, player.w, player.h, sx, g.y, g.w, g.h)) {
+    const delivered = L2.carryFood;
+    if (delivered > 0) {
+      L2.deliveredFood += delivered;
+      L2.score += delivered * 40; // little delivery bonus
+      L2.carryFood = 0;
+    }
+    if (L2.techT > 0) L2.techT = 0;
+
+    g.hiCd = 1.2;
+    showL2Banner(delivered > 0 ? "GARY: NICE WORK! I’LL TAKE THAT." : "GARY: KEEP IT UP!");
+    SFX.dingding();
+    FX.flashT = 0.18;
+    spawnSparkles(player.x + player.w * 0.5, player.y + 8, 10);
+  }
+}
+
+function updateChris(dt, floorY) {
+  const c = L2.chris;
+  if (!c.active) return;
+
+  c.walkT += dt;
+  const desired = L2.camX + VIEW.gw * 0.72;
+  c.x += (desired - c.x) * Math.min(1, dt * 0.45);
+  const wig = Math.sin(c.walkT * 2.0) * 70;
+  c.x += wig * dt * 0.35;
+  c.y = floorY - c.h;
+
+  if (c.hitCd > 0) c.hitCd -= dt;
+
+  const sx = c.x - L2.camX;
+  if (c.hitCd <= 0 && rectsOverlap(player.x, player.y, player.w, player.h, sx, c.y, c.w, c.h)) {
+    c.hitCd = 1.0;
+    L2.techT = 10.0;
+    showL2Banner("CHRIS: TAKE THIS CORD… AND THIS LAPTOP…");
+    SFX.decoy();
+    spawnSparkles(player.x + player.w * 0.5, player.y + 8, 10);
+  }
+}
+
+function updateMichelleB(dt, floorY) {
+  const m = L2.michelle;
+  if (!m.active) return;
+
+  m.y = floorY - m.h;
+  if (m.snapCd > 0) m.snapCd -= dt;
+
+  const sx = m.x - L2.camX;
+
+  // one-time photo bonus on proximity
+  const dx = (player.x + player.w * 0.5) - (sx + m.w * 0.5);
+  const dy = (player.y + player.h * 0.5) - (m.y + m.h * 0.5);
+  const dist2 = dx * dx + dy * dy;
+
+  if (!m.seen && dist2 < (120 * 120)) {
+    m.seen = true;
+    L2.score += 80;
+    FX.flashT = 0.18;
+    SFX.shutter();
+    showL2Banner("MICHELLE: SMILE! 📸");
+  }
+}
+
 function updateLevel2(dt) {
   const floorY = VIEW.gh * 0.78;
 
@@ -1276,34 +1540,52 @@ function updateLevel2(dt) {
     return;
   }
 
-  // Phase A countdown (time pressure)
+  // Phase countdown (time pressure)
   L2.phaseT = Math.max(0, L2.phaseT - dt);
-  if (L2.phaseT <= 0) {
-    L2.done = true;
-    L2.score += 300; // little “finish” bonus
-    SFX.dingding();
-    spawnConfettiBurst();
-    updateFX(dt);
-    return;
-  }
 
-  // Auto-scroll camera
+  // Auto-scroll camera (always)
   L2.camX += L2.scrollSpeed * dt;
 
-  // Player movement (still left/right + jump, but forward progress is the scroll)
+  // Input
   const left = touch.left || keys.has("ArrowLeft") || keys.has("a") || keys.has("A");
   const right = touch.right || keys.has("ArrowRight") || keys.has("d") || keys.has("D");
 
+  // Base move speed per phase
   let move = PHYS.moveSpeed;
-  if (L2.slowT > 0) {
-    L2.slowT -= dt;
-    move *= L2.slowMul;
-    if (L2.slowT <= 0) {
-      L2.slowT = 0;
-      showL2Banner("FREE TO RUN!");
+
+  if (L2.phase === "trek") {
+    // Marcy slow (Phase A)
+    if (L2.slowT > 0) {
+      L2.slowT -= dt;
+      move *= L2.slowMul;
+      if (L2.slowT <= 0) {
+        L2.slowT = 0;
+        showL2Banner("FREE TO RUN!");
+      }
+    }
+  } else if (L2.phase === "bus") {
+    // Slightly heavier overall (Phase B)
+    move *= 0.88;
+
+    // Carry weight slows you a little until Gary takes it
+    const weightMul = clamp(1 - L2.carryFood * 0.03, 0.65, 1);
+    move *= weightMul;
+
+    // Tech clutter slow (Chris) for 10s, or until Gary clears it
+    if (L2.techT > 0) {
+      L2.techT = Math.max(0, L2.techT - dt);
+      move *= 0.55;
+      if (L2.techT <= 0) showL2Banner("BACK ON TRACK!");
+    }
+
+    // Snow slip slow
+    if (L2.slipT > 0) {
+      L2.slipT = Math.max(0, L2.slipT - dt);
+      move *= 0.55;
     }
   }
 
+  // Horizontal movement
   player.vx = 0;
   if (left) player.vx -= move;
   if (right) player.vx += move;
@@ -1316,39 +1598,119 @@ function updateLevel2(dt) {
 
   player.x += player.vx * dt;
 
-  // Keep player within the screen band (auto-run feel)
+  // Keep player within screen band
   player.x = clamp(player.x, 70, VIEW.gw * 0.84);
 
+  // Gravity + vertical movement
   player.vy += PHYS.gravity * dt;
   player.y += player.vy * dt;
 
   resolvePlatforms(prevX, prevY, floorY);
 
-  // Spawn and update coins
-  spawnL2Coins(floorY, dt);
+  // ------------------ Phase-specific gameplay ------------------
+  if (L2.phase === "trek") {
+    // Spawn & collect donations
+    spawnL2Coins(floorY, dt);
 
-  for (const c of L2.coins) {
-    if (!c.alive) continue;
-    c.bob += dt * 4.2;
-    const cx = c.x - L2.camX;
-    const cy = c.y + Math.sin(c.bob) * 3;
+    for (const c of L2.coins) {
+      if (!c.alive) continue;
+      c.bob += dt * 4.2;
+      const cx = c.x - L2.camX;
+      const cy = c.y + Math.sin(c.bob) * 3;
 
-    if (cx < -60 || cx > VIEW.gw + 60) continue;
+      if (cx < -60 || cx > VIEW.gw + 60) continue;
 
-    if (rectsOverlap(player.x, player.y, player.w, player.h, cx - c.r, cy - c.r, c.r * 2, c.r * 2)) {
-      c.alive = false;
-      L2.collected += 1;
-      L2.score += 100;
-      SFX.collect();
-      spawnSparkles(player.x + player.w * 0.5, player.y + 10, 10);
+      if (rectsOverlap(player.x, player.y, player.w, player.h, cx - c.r, cy - c.r, c.r * 2, c.r * 2)) {
+        c.alive = false;
+        L2.collected += 1;
+        L2.score += 100;
+        SFX.collect();
+        spawnSparkles(player.x + player.w * 0.5, player.y + 10, 10);
+      }
+    }
+
+    // NPCs
+    updatePriam(dt, floorY);
+    updateMarcy(dt, floorY);
+
+    // Finish Phase A → transition to Phase B
+    if (L2.phaseT <= 0) {
+      startL2PhaseB();
+      updateFX(dt);
+      return;
+    }
+  } else if (L2.phase === "bus") {
+    // Spawn food + snow hazards
+    spawnL2Food(floorY, dt);
+    spawnL2Snow(floorY, dt);
+
+    // Collect food (adds to carry)
+    for (const f of L2.foods) {
+      if (!f.alive) continue;
+      const fx = f.x - L2.camX;
+      const fy = f.y;
+      if (fx < -60 || fx > VIEW.gw + 60) continue;
+
+      if (rectsOverlap(player.x, player.y, player.w, player.h, fx - 10, fy - 10, 20, 20)) {
+        f.alive = false;
+        L2.carryFood += 1;
+        L2.score += 120;
+        SFX.collect();
+        spawnSparkles(player.x + player.w * 0.5, player.y + 10, 10);
+      }
+    }
+
+    // Snow collisions (slip)
+    for (const s of L2.snow) {
+      const sx = s.x - L2.camX;
+      if (sx < -80 || sx > VIEW.gw + 80) continue;
+      if (s.hitCd > 0) continue;
+
+      if (rectsOverlap(player.x, player.y, player.w, player.h, sx, s.y, s.w, s.h)) {
+        s.hitCd = 1.2;
+        L2.slipT = 1.8;
+        player.x = clamp(player.x - 18, 70, VIEW.gw * 0.84);
+        showL2Banner("WHOA — ICE!");
+        SFX.tick();
+      }
+    }
+
+    // NPCs
+    updateGary(dt, floorY);
+    updateChris(dt, floorY);
+
+    // Michelle appears near the end (last ~10s)
+    if (!L2.michelle.seen && L2.phaseT <= 10.0) {
+      if (!L2.michelle.active) {
+        L2.michelle.active = true;
+        L2.michelle.x = L2.camX + VIEW.gw * 0.70;
+        L2.michelle.y = floorY - L2.michelle.h;
+        L2.michelle.seen = false;
+      }
+      // keep her roughly in view
+      L2.michelle.x = (L2.camX + VIEW.gw * 0.70);
+      updateMichelleB(dt, floorY);
+    }
+
+    // Finish Phase B
+    if (L2.phaseT <= 0) {
+      // auto-deliver anything still carried
+      if (L2.carryFood > 0) {
+        L2.deliveredFood += L2.carryFood;
+        L2.score += L2.carryFood * 40;
+        L2.carryFood = 0;
+      }
+
+      L2.done = true;
+      L2.score += 350; // finish bonus
+      SFX.dingding();
+      spawnConfettiBurst();
+      updateFX(dt);
+      return;
     }
   }
 
-  // NPCs
-  updatePriam(dt, floorY);
-  updateMarcy(dt, floorY);
-
-  // Tiny passive score drip for “heroic run”
+  // Tiny passive score drip
   L2.score += Math.floor(dt * 2);
 
   updateFX(dt);
@@ -2037,25 +2399,204 @@ function drawMarcyNPC() {
   drawPixelRect(x + 4, y + 35, 4, 1, "rgba(255,255,255,0.35)");
 }
 
+
+function drawGaryNPC() {
+  const g = L2.gary;
+  if (!g.active) return;
+
+  const x = Math.round(g.x - L2.camX);
+  const y = Math.round(g.y);
+
+  drawPixelRect(x + 7, y + g.h - 3, g.w - 14, 3, "rgba(0,0,0,0.25)");
+
+  // suit jacket (dark) + tie (maroon)
+  drawPixelRect(x + 6, y + 18, 22, 26, "rgba(20,25,38,0.92)");
+  drawPixelRect(x + 16, y + 20, 2, 22, "rgba(128,0,32,0.90)");
+
+  // head + hair
+  drawPixelRect(x + 9, y + 4, 16, 14, "#D6B08A");
+  drawPixelRect(x + 9, y + 4, 16, 5, "#3A2A2A");
+
+  // thumbs up (pixel)
+  drawPixelRect(x + 26, y + 28, 6, 6, "rgba(255,255,255,0.18)");
+  drawPixelRect(x + 28, y + 30, 2, 2, "#FFD24D");
+}
+
+function drawChrisNPC() {
+  const c = L2.chris;
+  if (!c.active) return;
+
+  const x = Math.round(c.x - L2.camX);
+  const y = Math.round(c.y);
+
+  drawPixelRect(x + 7, y + c.h - 3, c.w - 14, 3, "rgba(0,0,0,0.25)");
+
+  // hoodie
+  drawPixelRect(x + 6, y + 18, 22, 26, "rgba(255,255,255,0.12)");
+  drawPixelRect(x + 8, y + 20, 18, 22, "rgba(0,0,0,0.22)");
+
+  // head + hair
+  drawPixelRect(x + 9, y + 4, 16, 14, "#D1A98B");
+  drawPixelRect(x + 9, y + 4, 16, 5, "#2A2A2A");
+
+  // tech stack (cord/laptop)
+  drawPixelRect(x + 24, y + 26, 10, 6, "rgba(0,0,0,0.30)");
+  drawPixelRect(x + 25, y + 27, 8, 4, "rgba(255,255,255,0.12)");
+  drawPixelRect(x + 22, y + 34, 14, 3, "#7BD6FF");
+}
+
+function drawMichelleNPC_B() {
+  const m = L2.michelle;
+  if (!m.active) return;
+
+  const x = Math.round(m.x - L2.camX);
+  const y = Math.round(m.y);
+
+  drawPixelRect(x + 7, y + 54 - 3, 20, 3, "rgba(0,0,0,0.25)");
+
+  // dress/jacket
+  drawPixelRect(x + 6, y + 18, 22, 26, "rgba(255,255,255,0.14)");
+  drawPixelRect(x + 8, y + 20, 18, 22, "rgba(128,0,32,0.35)");
+
+  // head + hair
+  drawPixelRect(x + 9, y + 4, 16, 14, "#FFD2B5");
+  drawPixelRect(x + 9, y + 4, 16, 5, "#4A2A16");
+
+  // camera
+  drawPixelRect(x + 2, y + 28, 10, 8, "rgba(0,0,0,0.35)");
+  drawPixelRect(x + 4, y + 30, 6, 4, "rgba(255,255,255,0.12)");
+  drawPixelRect(x + 6, y + 31, 2, 2, "#FFD24D");
+}
+
 function drawLevel2() {
   const floorY = VIEW.gh * 0.78;
-  drawHallwayBackdrop(floorY); // placeholder hallway background
 
-  
-// Scrolling posters / easter eggs (stable alternating posters)
-const posterCam = L2.camX * 0.70; // slight parallax like lockers
-const startN = Math.floor((posterCam - 240) / 240);
-const endN = Math.floor((posterCam + VIEW.gw + 480) / 240);
+  if (L2.phase === "trek") {
+    // ---------------- Phase A: Trojan Trek ----------------
+    drawHallwayBackdrop(floorY);
 
-for (let n = startN; n <= endN; n++) {
-  const px = (n * 240 + 40) - posterCam;
-  const py = floorY - 170;
+    // Stable alternating posters
+    const posterCam = L2.camX * 0.70;
+    const startN = Math.floor((posterCam - 240) / 240);
+    const endN = Math.floor((posterCam + VIEW.gw + 480) / 240);
 
-  const k = ((n % 3) + 3) % 3; // 0: Helen & Paris, 1: Trojan Trek, 2: Trail Relay
-  if (k === 0) drawPoster(px, py, 150, 88, "HELEN & PARIS", "Toga Contest • Vote!", "#FFD24D");
-  if (k === 1) drawPoster(px, py, 150, 88, "TROJAN TREK", "Donate • Cheer • Run", "#2FAE5A");
-  if (k === 2) drawPoster(px, py, 150, 88, "TRAIL RELAY", "Join the team!", "#7BD6FF");
-}
+    for (let n = startN; n <= endN; n++) {
+      const px = (n * 240 + 40) - posterCam;
+      const py = floorY - 170;
+
+      const k = ((n % 3) + 3) % 3; // 0: Helen & Paris, 1: Trojan Trek, 2: Trail Relay
+      if (k === 0) drawPoster(px, py, 150, 88, "HELEN & PARIS", "Toga Contest • Vote!", "#FFD24D");
+      if (k === 1) drawPoster(px, py, 150, 88, "TROJAN TREK", "Donate • Cheer • Run", "#2FAE5A");
+      if (k === 2) drawPoster(px, py, 150, 88, "TRAIL RELAY", "Join the team!", "#7BD6FF");
+    }
+
+    // Platforms
+    for (const p of L2.platforms) {
+      const x = p.x - L2.camX;
+      if (x + p.w < -80 || x > VIEW.gw + 80) continue;
+      const col = (p.y >= floorY) ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.16)";
+      drawPixelRect(x, p.y, p.w, p.h, col);
+      drawPixelRect(x, p.y, p.w, 2, "rgba(0,0,0,0.22)");
+    }
+
+    // Coins
+    for (const c of L2.coins) {
+      if (!c.alive) continue;
+      const cx = c.x - L2.camX;
+      const cy = c.y + Math.sin(c.bob) * 3;
+      if (cx < -40 || cx > VIEW.gw + 40) continue;
+      drawCoin(cx, cy, c.r);
+    }
+
+    // NPCs
+    drawPriamNPC();
+    drawMarcyNPC();
+
+    // Player + FX
+    drawChibiPlayer();
+    drawSparkles();
+    drawConfetti();
+
+    // HUD
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.font = "700 16px system-ui, Arial";
+    ctx.textAlign = "left";
+    ctx.fillText(`Level 2 — Trojan Trek`, 16, 38);
+    ctx.fillText(`Phase A: Donations Dash`, 16, 60);
+    ctx.fillText(`Score: ${L2.score}`, 16, 82);
+
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.font = "800 13px system-ui, Arial";
+    ctx.fillText(`💰 Donations: ${L2.collected}`, 16, 106);
+    if (L2.stolen > 0) ctx.fillText(`(Priam stole: ${L2.stolen})`, 16, 126);
+
+    ctx.textAlign = "right";
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.font = "800 16px system-ui, Arial";
+    ctx.fillText(`Time: ${Math.ceil(L2.phaseT)}s`, VIEW.gw - 16, 38);
+
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.font = "700 13px system-ui, Arial";
+    ctx.fillText(`Back: Esc`, VIEW.gw - 16, 60);
+    if (L2.slowT > 0) ctx.fillText(`Slowed: ${Math.ceil(L2.slowT)}s`, VIEW.gw - 16, 82);
+
+    drawPhaseBanner(L2.bannerText, L2.bannerT);
+    return;
+  }
+
+  // ---------------- Phase B: Fill the Bus ----------------
+  // Winter-y backdrop (cooler tint over hallway)
+  drawHallwayBackdrop(floorY);
+  drawPixelRect(0, 0, VIEW.gw, floorY, "rgba(120,180,255,0.10)");
+
+  // Snowflakes
+  for (let i = 0; i < 60; i++) {
+    const fx = (i * 43 + (state.t * 38) * (0.6 + (i % 5) * 0.12)) % (VIEW.gw + 40) - 20;
+    const fy = (i * 29 + state.t * (26 + (i % 7) * 3)) % (floorY - 30) + 20;
+    drawPixelRect(fx, fy, 2, 2, "rgba(255,255,255,0.55)");
+  }
+
+  // Posters
+  const posterCam = L2.camX * 0.70;
+  const startN = Math.floor((posterCam - 260) / 260);
+  const endN = Math.floor((posterCam + VIEW.gw + 520) / 260);
+  for (let n = startN; n <= endN; n++) {
+    const px = (n * 260 + 40) - posterCam;
+    const py = floorY - 170;
+
+    const k = ((n % 3) + 3) % 3;
+    if (k === 0) drawPoster(px, py, 160, 88, "FILL THE BUS", "Bring food donations!", "#7BD6FF");
+    if (k === 1) drawPoster(px, py, 160, 88, "COMMUNITY", "Together we can.", "#FFD24D");
+    if (k === 2) drawPoster(px, py, 160, 88, "THANK YOU!", "Moncton supports.", "#2FAE5A");
+  }
+
+  // Bus filling in background (simple)
+  const busX = VIEW.gw - 220;
+  const busY = floorY - 120;
+  drawPixelRect(busX - 2, busY - 2, 206, 92, "rgba(0,0,0,0.30)");
+  drawPixelRect(busX, busY, 202, 88, "rgba(255,255,255,0.12)");
+  drawPixelRect(busX + 4, busY + 18, 194, 54, "rgba(0,0,0,0.22)");
+  // fill meter inside bus
+  const fill = clamp((L2.deliveredFood + L2.carryFood) / 20, 0, 1);
+  drawPixelRect(busX + 6, busY + 62 - Math.round(44 * fill), 190, Math.round(44 * fill), "rgba(123,214,255,0.35)");
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.font = "900 10px system-ui, Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("BUS", busX + 100, busY + 14);
+
+  // Crates labelled “Community”
+  const crateCam = L2.camX * 0.85;
+  for (let i = -1; i < 5; i++) {
+    const cx = (i * 340 + 120) - (crateCam % 340);
+    const cy = floorY - 44;
+    drawPixelRect(cx - 1, cy - 1, 66, 46, "rgba(0,0,0,0.25)");
+    drawPixelRect(cx, cy, 64, 44, "rgba(255,183,74,0.55)");
+    drawPixelRect(cx + 6, cy + 10, 52, 4, "rgba(0,0,0,0.20)");
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.font = "900 9px system-ui, Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("COMMUNITY", cx + 32, cy + 28);
+  }
 
   // Platforms
   for (const p of L2.platforms) {
@@ -2066,18 +2607,25 @@ for (let n = startN; n <= endN; n++) {
     drawPixelRect(x, p.y, p.w, 2, "rgba(0,0,0,0.22)");
   }
 
-  // Coins (donations)
-  for (const c of L2.coins) {
-    if (!c.alive) continue;
-    const cx = c.x - L2.camX;
-    const cy = c.y + Math.sin(c.bob) * 3;
-    if (cx < -40 || cx > VIEW.gw + 40) continue;
-    drawCoin(cx, cy, c.r);
+  // Snow piles
+  for (const s of L2.snow) {
+    const sx = s.x - L2.camX;
+    if (sx < -80 || sx > VIEW.gw + 80) continue;
+    drawSnowPile(sx, s.y, s.w, s.h);
   }
 
-  // NPCs (Phase A)
-  drawPriamNPC();
-  drawMarcyNPC();
+  // Food items
+  for (const f of L2.foods) {
+    if (!f.alive) continue;
+    const fx = f.x - L2.camX;
+    if (fx < -60 || fx > VIEW.gw + 60) continue;
+    drawFoodItem(fx, f.y);
+  }
+
+  // NPCs
+  drawGaryNPC();
+  drawChrisNPC();
+  drawMichelleNPC_B();
 
   // Player + FX
   drawChibiPlayer();
@@ -2088,16 +2636,15 @@ for (let n = startN; n <= endN; n++) {
   ctx.fillStyle = "rgba(255,255,255,0.95)";
   ctx.font = "700 16px system-ui, Arial";
   ctx.textAlign = "left";
-  ctx.fillText(`Level 2 — Trojan Trek`, 16, 38);
-  ctx.fillText(`Phase A: Donations Dash`, 16, 60);
+  ctx.fillText(`Level 2 — Fundraising Season`, 16, 38);
+  ctx.fillText(`Phase B: Fill the Bus`, 16, 60);
   ctx.fillText(`Score: ${L2.score}`, 16, 82);
 
   ctx.fillStyle = "rgba(255,255,255,0.75)";
   ctx.font = "800 13px system-ui, Arial";
-  ctx.fillText(`💰 Donations: ${L2.collected}`, 16, 106);
-  if (L2.stolen > 0) ctx.fillText(`(Priam stole: ${L2.stolen})`, 16, 126);
+  ctx.fillText(`🥫 Carrying: ${L2.carryFood}`, 16, 106);
+  ctx.fillText(`Delivered: ${L2.deliveredFood}`, 16, 126);
 
-  // Right side: timer + status
   ctx.textAlign = "right";
   ctx.fillStyle = "rgba(255,255,255,0.95)";
   ctx.font = "800 16px system-ui, Arial";
@@ -2106,7 +2653,8 @@ for (let n = startN; n <= endN; n++) {
   ctx.fillStyle = "rgba(255,255,255,0.75)";
   ctx.font = "700 13px system-ui, Arial";
   ctx.fillText(`Back: Esc`, VIEW.gw - 16, 60);
-  if (L2.slowT > 0) ctx.fillText(`Slowed: ${Math.ceil(L2.slowT)}s`, VIEW.gw - 16, 82);
+  if (L2.techT > 0) ctx.fillText(`Tech clutter: ${Math.ceil(L2.techT)}s`, VIEW.gw - 16, 82);
+  else if (L2.slipT > 0) ctx.fillText(`Slipping…`, VIEW.gw - 16, 82);
 
   drawPhaseBanner(L2.bannerText, L2.bannerT);
 
@@ -2117,14 +2665,23 @@ for (let n = startN; n <= endN; n++) {
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.textAlign = "center";
     ctx.font = "900 28px system-ui, Arial";
-    ctx.fillText("PHASE A COMPLETE!", VIEW.gw / 2, VIEW.gh * 0.42);
+    ctx.fillText("FOOD DELIVERED.", VIEW.gw / 2, VIEW.gh * 0.42);
 
     ctx.font = "800 16px system-ui, Arial";
-    ctx.fillText("Trojan Trek donations delivered.", VIEW.gw / 2, VIEW.gh * 0.50);
+    ctx.fillText("Community support loaded up — thank you!", VIEW.gw / 2, VIEW.gh * 0.50);
 
-    ctx.font = "700 13px system-ui, Arial";
+    // Donation meter
+    const meterW = 320, meterH = 16;
+    const mx = VIEW.gw / 2 - meterW / 2;
+    const my = VIEW.gh * 0.58;
+    drawPixelRect(mx - 2, my - 2, meterW + 4, meterH + 4, "rgba(0,0,0,0.35)");
+    drawPixelRect(mx, my, meterW, meterH, "rgba(255,255,255,0.12)");
+    const f = clamp(L2.deliveredFood / 20, 0, 1);
+    drawPixelRect(mx + 2, my + 2, Math.round((meterW - 4) * f), meterH - 4, "rgba(123,214,255,0.55)");
+
+    ctx.font = "700 12px system-ui, Arial";
     ctx.fillStyle = "rgba(255,255,255,0.75)";
-    ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.58);
+    ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.66);
   }
 }
 
