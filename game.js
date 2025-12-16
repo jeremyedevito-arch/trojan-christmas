@@ -967,8 +967,11 @@ const L2 = {
   // Auto-scroll + modifiers
   scrollSpeed: 240,       // world units per second
   slowT: 0,               // Marcy slow timer
-  slowMul: 0.55,          // movement multiplier during slow
+  slowMul: 0.35,          // movement multiplier during slow
 
+
+  // Marcy scheduling (she appears with some Trail Relay posters)
+  nextMarcyN: 2,           // poster index n (every 240 units) where Marcy will appear (n % 3 === 2)
   // UI banner
   bannerT: 0,
   bannerText: "",
@@ -999,6 +1002,8 @@ const L2 = {
     triggerCd: 0,
     following: false,
     followT: 0,
+    posterN: 2,
+    anchorX: 0,
   },
 };
 
@@ -1050,14 +1055,16 @@ function resetLevel2() {
   L2.priam.walkT = 0;
   L2.priam.hitCd = 0;
 
-  L2.marcy.active = true;
-  L2.marcy.x = 860;
-  L2.marcy.y = floorY - L2.marcy.h;
-  L2.marcy.dir = -1;
-  L2.marcy.walkT = 0;
-  L2.marcy.triggerCd = 0;
-  L2.marcy.following = false;
-  L2.marcy.followT = 0;
+  
+// Marcy appears with every 2nd or 3rd TRAIL RELAY poster (not always on-screen)
+L2.nextMarcyN = 2; // first TRAIL RELAY poster index (n % 3 === 2)
+L2.marcy.active = false;
+L2.marcy.following = false;
+L2.marcy.followT = 0;
+L2.marcy.walkT = 0;
+L2.marcy.triggerCd = 0;
+L2.marcy.posterN = L2.nextMarcyN;
+L2.marcy.anchorX = 0;
 
   // Player start
   player.x = 140;
@@ -1173,19 +1180,20 @@ function updatePriam(dt, floorY) {
   }
 }
 
+
 function updateMarcy(dt, floorY) {
   const m = L2.marcy;
-  if (!m.active) return;
 
+  // cooldown after releasing player
   if (m.triggerCd > 0) m.triggerCd -= dt;
 
+  // If she's currently “got you,” she follows you on-screen for 5 seconds
   if (m.following) {
     m.followT -= dt;
     m.y = floorY - m.h;
 
-    // Walk alongside player (on-screen), regardless of world scroll.
+    // Walk alongside player (screen space), regardless of world scroll
     const targetScreenX = player.x + 54;
-    // Convert to world x: screenX + camX
     m.x = (targetScreenX + L2.camX);
 
     if (m.followT <= 0) {
@@ -1196,13 +1204,52 @@ function updateMarcy(dt, floorY) {
     return;
   }
 
-  // Keep Marcy near “Trail Relay” poster zone a bit further ahead.
-  const desired = L2.camX + VIEW.gw * 0.80;
-  m.x += (desired - m.x) * Math.min(1, dt * 0.70);
+  // Determine which TRAIL RELAY poster index (n) should spawn Marcy next.
+  // Posters are at world x = 40 + n*240 in poster space; our posters use posterCam = camX*0.70,
+  // but Marcy is in world space, so we anchor her to real camX (keeps gameplay consistent).
+  const posterWorldX = (80 + L2.nextMarcyN * 240); // aligned with visual poster rhythm
+
+  // Spawn Marcy when her TRAIL RELAY poster is about to enter the screen
+  const posterScreenX = posterWorldX - L2.camX;
+  if (!m.active) {
+    // If we somehow passed it, advance to the next scheduled one
+    if (posterScreenX < -260) {
+      const skip = (Math.random() < 0.5) ? 2 : 3;
+      L2.nextMarcyN += 3 * skip;
+      return;
+    }
+
+    if (posterScreenX < VIEW.gw + 40) {
+      m.active = true;
+      m.posterN = L2.nextMarcyN;
+      m.anchorX = posterWorldX + 185; // stand beside the poster
+      m.walkT = 0;
+      m.x = m.anchorX;
+      m.y = floorY - m.h;
+    } else {
+      return;
+    }
+  }
+
+  // While active, she paces back and forth beside “her” TRAIL RELAY poster
+  const thisPosterX = (80 + m.posterN * 240);
+  const thisPosterScreenX = thisPosterX - L2.camX;
+
+  // Drift off with the poster if avoided
+  if (thisPosterScreenX < -260) {
+    m.active = false;
+
+    // Schedule the next appearance on the 2nd or 3rd TRAIL RELAY poster ahead
+    const skip = (Math.random() < 0.5) ? 2 : 3;
+    L2.nextMarcyN = m.posterN + 3 * skip;
+    m.posterN = L2.nextMarcyN;
+    return;
+  }
 
   m.walkT += dt;
   const pace = Math.sin(m.walkT * 2.2) * 70;
-  m.x += pace * dt;
+  m.anchorX = thisPosterX + 185;
+  m.x = m.anchorX + pace * 0.35;
   m.y = floorY - m.h;
 
   // Proximity trigger (not collision): if player gets too close, slow for 5s
@@ -1211,7 +1258,7 @@ function updateMarcy(dt, floorY) {
   const dy = (player.y + player.h * 0.5) - (m.y + m.h * 0.5);
   const dist2 = dx * dx + dy * dy;
 
-  if (m.triggerCd <= 0 && L2.slowT <= 0 && dist2 < (110 * 110)) {
+  if (m.triggerCd <= 0 && L2.slowT <= 0 && dist2 < (120 * 120)) {
     L2.slowT = 5.0;
     m.following = true;
     m.followT = 5.0;
@@ -1888,12 +1935,20 @@ function drawMarchHare() {
       ctx.fillText("LEVEL 1 COMPLETE!", VIEW.gw / 2, VIEW.gh * 0.42);
 
       ctx.font = "800 16px system-ui, Arial";
-      ctx.fillText("Nice work — more levels coming soon.", VIEW.gw / 2, VIEW.gh * 0.50);
+      ctx.fillText("Nice work — ready for the next level?", VIEW.gw / 2, VIEW.gh * 0.50);
 
-      ctx.font = "700 13px system-ui, Arial";
-      ctx.fillStyle = "rgba(255,255,255,0.75)";
-      ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.58);
-    }
+      ctx.font = "800 14px system-ui, Arial";
+      ctx.fillStyle = "rgba(255,255,255,0.90)";
+      ctx.fillText("Press Enter to start Level 2", VIEW.gw / 2, VIEW.gh * 0.57);
+
+      ctx.font = "700 12px system-ui, Arial";
+      ctx.fillStyle = "rgba(255,255,255,0.70)";
+      ctx.fillText("(Tap/Click center on mobile)", VIEW.gw / 2, VIEW.gh * 0.61);
+
+      ctx.font = "700 12px system-ui, Arial";
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.66);
+      }
   }
 
 
@@ -1986,18 +2041,21 @@ function drawLevel2() {
   const floorY = VIEW.gh * 0.78;
   drawHallwayBackdrop(floorY); // placeholder hallway background
 
-  // Scrolling posters / easter eggs
-  const posterBase = -((L2.camX * 0.70) % 240);
-  for (let i = 0; i < 7; i++) {
-    const px = posterBase + i * 240 + 40;
-    const py = floorY - 170;
+  
+// Scrolling posters / easter eggs (stable alternating posters)
+const posterCam = L2.camX * 0.70; // slight parallax like lockers
+const startN = Math.floor((posterCam - 240) / 240);
+const endN = Math.floor((posterCam + VIEW.gw + 480) / 240);
 
-    // Cycle poster types so it feels “Trojan Trek” themed
-    const k = (i + Math.floor(L2.camX / 240)) % 3;
-    if (k === 0) drawPoster(px, py, 150, 88, "HELEN & PARIS", "Toga Contest • Vote!", "#FFD24D");
-    if (k === 1) drawPoster(px, py, 150, 88, "TROJAN TREK", "Donate • Cheer • Run", "#2FAE5A");
-    if (k === 2) drawPoster(px, py, 150, 88, "TRAIL RELAY", "Join the team!", "#7BD6FF");
-  }
+for (let n = startN; n <= endN; n++) {
+  const px = (n * 240 + 40) - posterCam;
+  const py = floorY - 170;
+
+  const k = ((n % 3) + 3) % 3; // 0: Helen & Paris, 1: Trojan Trek, 2: Trail Relay
+  if (k === 0) drawPoster(px, py, 150, 88, "HELEN & PARIS", "Toga Contest • Vote!", "#FFD24D");
+  if (k === 1) drawPoster(px, py, 150, 88, "TROJAN TREK", "Donate • Cheer • Run", "#2FAE5A");
+  if (k === 2) drawPoster(px, py, 150, 88, "TRAIL RELAY", "Join the team!", "#7BD6FF");
+}
 
   // Platforms
   for (const p of L2.platforms) {
@@ -2194,6 +2252,31 @@ function drawLevel2() {
       }
       return;
     }
+
+    if (state.screen === "level1") {
+  // On mobile: tap/click center on Level 1 Complete screen to continue
+  if (L1.levelDone) {
+    if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+      resetLevel2();
+      state.screen = "level2";
+      SFX.start();
+    }
+    return;
+  }
+
+  // Phase A/C jump (center tap) handled via touch controls below; left/right for movement
+  if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+    if ((L1.phase === "carrot" || L1.phase === "colouring") && player.onGround) {
+      player.vy = -PHYS.jumpV;
+      player.onGround = false;
+      SFX.jump();
+    }
+    clearTouch();
+  } else {
+    setTouchFromGX(gx);
+  }
+  return;
+}
 
     if (state.screen === "level2") {
       if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
