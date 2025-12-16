@@ -161,7 +161,11 @@
       beep({ type: "triangle", f0: 1040, f1: 1480, dur: 0.10, gain: 0.07 });
       setTimeout(() => beep({ type: "triangle", f0: 1240, f1: 1760, dur: 0.10, gain: 0.07 }), 120);
     },
-  };
+      jingle: () => {
+      beep({ type: "triangle", f0: 880, f1: 1320, dur: 0.10, gain: 0.045 });
+      setTimeout(() => beep({ type: "triangle", f0: 740, f1: 1180, dur: 0.10, gain: 0.040 }), 110);
+    },
+};
 
   function ensureAmbience() {
     if (state.muted) {
@@ -271,6 +275,7 @@
     confetti: [],
     flashT: 0,
     sparkles: [],
+    notes: [],
   };
 
   function spawnSparkles(x, y, n = 10) {
@@ -286,6 +291,18 @@
         c: Math.random() < 0.5 ? "rgba(255,255,255,0.95)" : (Math.random() < 0.5 ? "#FFD24D" : "#FF5EA8"),
       });
     }
+  }
+
+
+  function spawnMusicNote(x, y) {
+    FX.notes.push({
+      x, y,
+      vx: (Math.random() * 2 - 1) * 35,
+      vy: -40 - Math.random() * 35,
+      life: 0.9 + Math.random() * 0.4,
+      t: 0,
+      s: 3 + Math.random() * 2,
+    });
   }
 
   function spawnConfettiBurst() {
@@ -837,6 +854,15 @@ function updateFX(dt) {
       s.life -= dt;
     }
     FX.sparkles = FX.sparkles.filter(s => s.life > 0);
+
+    for (const n of FX.notes) {
+      n.t += dt;
+      n.x += n.vx * dt;
+      n.y += n.vy * dt;
+      n.vy += 30 * dt;
+      n.life -= dt;
+    }
+    FX.notes = FX.notes.filter(n => n.life > 0);
   }
 
   // -------------------- Level 1 update --------------------
@@ -1046,6 +1072,37 @@ const L2 = {
   },
 };
 
+
+const L3 = {
+  camX: 0,
+  score: 0,
+  t: 0,
+  phaseT: 60.0,
+  done: false,
+
+  // Falling late slips
+  lateIcons: [],
+  nextLateT: 0.12,
+
+  // Jamie (clipboard) – just a visual anchor
+  jamie: { x: 180, y: 0, w: 40, h: 64, dir: 1, speed: 60, clipT: 0 },
+
+  // Carolers
+  carolers: [],
+  nextCarolGroupT: 0.8,
+  carolDebuffT: 0,
+  noJumpT: 0,
+  slowMul: 1,
+
+  // Michelle flash photographer
+  michelle: { active: true, x: 780, y: 0, w: 42, h: 64, snapCd: 2.0 },
+
+  // End-of-level staging
+  endStage: "play", // play -> flash -> freeze -> summary
+  endT: 0,
+  freezeT: 0,
+};
+
 function showL2Banner(text) {
   L2.bannerText = text;
   L2.bannerT = 1.35;
@@ -1218,6 +1275,47 @@ function startL2PhaseB() {
 
   showL2Banner("PHASE B — FILL THE BUS!");
 }
+
+function resetLevel3() {
+  L3.camX = 0;
+  L3.score = 0;
+  L3.t = 0;
+  L3.phaseT = 60.0;
+  L3.done = false;
+
+  L3.lateIcons = [];
+  L3.nextLateT = 0.10;
+
+  L3.jamie.x = 170;
+  L3.jamie.dir = 1;
+  L3.jamie.clipT = 0;
+
+  L3.carolers = [];
+  L3.nextCarolGroupT = 0.6;
+  L3.carolDebuffT = 0;
+  L3.noJumpT = 0;
+  L3.slowMul = 1;
+
+  L3.michelle.active = true;
+  L3.michelle.x = 820;
+  L3.michelle.snapCd = 1.8;
+
+  L3.endStage = "play";
+  L3.endT = 0;
+  L3.freezeT = 0;
+
+  player.x = 160;
+  player.y = VIEW.gh * 0.78 - player.h;
+  player.vx = 0;
+  player.vy = 0;
+  player.onGround = true;
+
+  FX.confetti = [];
+  FX.flashT = 0;
+  FX.sparkles = [];
+  FX.notes = [];
+}
+
 
 function resolvePlatforms(prevX, prevY, floorY) {
   // Very simple AABB platform collision: land on top only.
@@ -1771,6 +1869,194 @@ function updateLevel2(dt) {
 
   updateFX(dt);
 }
+
+// -------------------- Level 3 update --------------------
+function spawnL3LateIcon() {
+  L3.lateIcons.push({
+    x: L3.camX + (VIEW.gw * 0.35) + Math.random() * (VIEW.gw * 0.55),
+    y: 30 + Math.random() * 60,
+    vy: 90 + Math.random() * 140,
+    t: 0,
+    alive: true,
+  });
+}
+
+function spawnCarolGroup() {
+  const baseX = L3.camX + VIEW.gw + 120 + Math.random() * 260;
+  const count = 10 + Math.floor(Math.random() * 4); // 10–13
+  for (let i = 0; i < count; i++) {
+    L3.carolers.push({
+      x: baseX + i * 34 + Math.random() * 18,
+      y: 0,
+      w: 22,
+      h: 34,
+      scale: 0.66,
+      dir: Math.random() < 0.5 ? -1 : 1,
+      speed: 26 + Math.random() * 18,
+      active: true,
+      noteT: 0,
+    });
+  }
+}
+
+function updateLevel3(dt) {
+  const floorY = VIEW.gh * 0.78;
+
+  // End staging
+  if (L3.endStage !== "play") {
+    if (L3.endStage === "flash") {
+      L3.endT -= dt;
+      if (L3.endT <= 0) {
+        L3.endStage = "freeze";
+        L3.freezeT = 3.0;
+      }
+    } else if (L3.endStage === "freeze") {
+      L3.freezeT -= dt;
+      if (L3.freezeT <= 0) {
+        L3.endStage = "summary";
+      }
+    }
+    updateFX(dt);
+    return;
+  }
+
+  L3.t += dt;
+  L3.phaseT = Math.max(0, L3.phaseT - dt);
+
+  // Auto-scroll
+  L3.camX += 240 * dt;
+
+  // Debuffs
+  if (L3.carolDebuffT > 0) L3.carolDebuffT = Math.max(0, L3.carolDebuffT - dt);
+  if (L3.noJumpT > 0) L3.noJumpT = Math.max(0, L3.noJumpT - dt);
+  L3.slowMul = (L3.carolDebuffT > 0) ? 0.42 : 1.0;
+
+  // Input
+  const left = touch.left || keys.has("ArrowLeft") || keys.has("a") || keys.has("A");
+  const right = touch.right || keys.has("ArrowRight") || keys.has("d") || keys.has("D");
+
+  let move = 180 * L3.slowMul;
+  if (left) player.vx = -move;
+  else if (right) player.vx = move;
+  else player.vx *= 0.82;
+
+  // Physics
+  player.vy += PHYS.g * dt;
+  player.x += player.vx * dt;
+  player.y += player.vy * dt;
+
+  // Clamp
+  player.x = clamp(player.x, 50, VIEW.gw - 50 - player.w);
+  if (player.y + player.h >= floorY) { player.y = floorY - player.h; player.vy = 0; player.onGround = true; }
+
+  // Jamie pacing (visual)
+  const j = L3.jamie;
+  j.x += j.dir * j.speed * dt;
+  if (j.x < 110) { j.x = 110; j.dir = 1; }
+  if (j.x > VIEW.gw * 0.55) { j.x = VIEW.gw * 0.55; j.dir = -1; }
+  if (j.clipT > 0) j.clipT -= dt;
+
+  // Late slips — fast and furious all minute
+  L3.nextLateT -= dt;
+  if (L3.nextLateT <= 0) {
+    L3.nextLateT = 0.18 + Math.random() * 0.22;
+    spawnL3LateIcon();
+  }
+
+  for (const ic of L3.lateIcons) {
+    ic.t += dt;
+    ic.y += ic.vy * dt;
+    if (ic.y > floorY - 40) ic.vy = -Math.abs(ic.vy) * 0.22;
+
+    const ix = ic.x - L3.camX;
+    if (rectsOverlap(player.x, player.y, player.w, player.h, ix, ic.y, 12, 14)) {
+      ic.alive = false;
+      L3.score += 60;
+      j.clipT = 0.35;
+      SFX.tick();
+      spawnSparkles(player.x + player.w * 0.5, player.y + 10, 10);
+    }
+    if (ic.t > 7) ic.alive = false;
+  }
+  L3.lateIcons = L3.lateIcons.filter(a => a.alive);
+
+  // Carolers spawn groups
+  L3.nextCarolGroupT -= dt;
+  if (L3.nextCarolGroupT <= 0) {
+    L3.nextCarolGroupT = 1.4 + Math.random() * 1.1;
+    spawnCarolGroup();
+  }
+
+  // Carolers update + proximity trap
+  const trapR = 42; // slightly harder to avoid
+  for (const c of L3.carolers) {
+    if (!c.active) continue;
+    c.y = floorY - (c.h / c.scale);
+
+    if (L3.carolDebuffT > 0) {
+      // follow the player while "recruiting"
+      const tx = player.x + (Math.sin((state.t + c.x) * 0.02) * 26);
+      const wx = L3.camX + tx;
+      c.x += (wx - c.x) * dt * 2.2;
+
+      c.noteT -= dt;
+      if (c.noteT <= 0) {
+        c.noteT = 0.12 + Math.random() * 0.16;
+        spawnMusicNote(player.x + 10 + Math.random() * 20, player.y - 8 - Math.random() * 18);
+        SFX.jingle();
+      }
+    } else {
+      // drift with group + mild pacing
+      c.x += c.dir * c.speed * dt;
+      const sx = c.x - L3.camX;
+      if (sx < 220) c.dir = 1;
+      if (sx > VIEW.gw * 0.88) c.dir = -1;
+
+      // Proximity check
+      const dx = (player.x + player.w * 0.5) - (sx + (c.w / c.scale) * 0.5);
+      const dy = (player.y + player.h * 0.5) - (c.y + (c.h / c.scale) * 0.5);
+      const d = Math.hypot(dx, dy);
+
+      if (d < trapR) {
+        L3.carolDebuffT = 5.0;
+        L3.noJumpT = 5.0;
+        SFX.tick();
+      }
+    }
+
+    if (c.x < L3.camX - 240) c.active = false;
+  }
+  L3.carolers = L3.carolers.filter(c => c.active);
+
+  // Michelle: periodic flashes
+  const m = L3.michelle;
+  m.y = floorY - m.h;
+  m.snapCd -= dt;
+
+  const desiredX = L3.camX + VIEW.gw * 0.82;
+  m.x += (desiredX - m.x) * dt * 1.4;
+  if (m.snapCd <= 0) {
+    m.snapCd = 1.6 + Math.random() * 2.0;
+    FX.flashT = 0.16;
+    spawnSparkles(player.x + player.w * 0.5, player.y + 8, 12);
+    L3.score += 20;
+    SFX.tick();
+  }
+
+  // Finish
+  if (L3.phaseT <= 0) {
+    L3.endStage = "flash";
+    L3.endT = 0.18;
+
+    FX.flashT = 0.35;
+    spawnSparkles(player.x + player.w * 0.5, player.y + 8, 24);
+
+    L3.done = true;
+    SFX.start();
+  }
+
+  updateFX(dt);
+}
   // -------------------- Draw helpers --------------------
   function clearScreen() {
     ctx.fillStyle = "#000";
@@ -2161,6 +2447,16 @@ function drawMarchHare() {
     for (const s of FX.sparkles) drawPixelRect(s.x, s.y, s.s, s.s, s.c);
   }
 
+  function drawNotes() {
+    for (const n of FX.notes) {
+      const x = Math.round(n.x), y = Math.round(n.y);
+      drawPixelRect(x, y, n.s, n.s, "rgba(255,255,255,0.85)");
+      drawPixelRect(x + n.s - 1, y - n.s - 2, 2, n.s + 3, "rgba(255,255,255,0.85)");
+      drawPixelRect(x + n.s, y - n.s - 2, 3, 2, "rgba(255,255,255,0.65)");
+    }
+  }
+
+
   function drawPhaseBanner(text, tLeft) {
     if (tLeft <= 0 || !text) return;
 
@@ -2365,7 +2661,7 @@ function drawMarchHare() {
 
       ctx.font = "700 12px system-ui, Arial";
       ctx.fillStyle = "rgba(255,255,255,0.55)";
-      ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.66);
+      ctx.fillText("Press Enter to start Level 3 • Tap/click center on mobile\nPress Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.66);
       }
   }
 
@@ -2786,9 +3082,139 @@ function drawLevel2() {
 
     ctx.font = "700 12px system-ui, Arial";
     ctx.fillStyle = "rgba(255,255,255,0.75)";
-    ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.66);
+    ctx.fillText("Press Enter to start Level 3 • Tap/click center on mobile\nPress Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.66);
   }
 }
+
+function drawLevel3() {
+  const floorY = VIEW.gh * 0.78;
+
+  drawHallwayBackdrop(floorY);
+
+  // Light festive trim
+  for (let i = 0; i < 9; i++) {
+    const x = (i * 120 + (L3.camX * 0.1) % 120) - 40;
+    drawPixelRect(x, 36, 10, 6, "rgba(255,255,255,0.10)");
+    drawPixelRect(x + 3, 42, 4, 4, "rgba(255,255,255,0.35)");
+  }
+
+  // Posters
+  for (let i = 0; i < 6; i++) {
+    const px = (i * 190) - ((L3.camX * 0.6) % 190) + 40;
+    const py = 86 + (i % 2) * 36;
+    drawPoster(px, py, 112, 46, (i % 2 === 0) ? "CHRISTMAS CAROLERS" : "LATE SLIPS INCOMING");
+  }
+
+  // Jamie
+  const j = L3.jamie;
+  drawNPC(j.x, floorY - 64, 40, 64, "#cc66ff", "JAMIE");
+  if (j.clipT > 0) drawPixelRect(j.x + 26, floorY - 50, 10, 16, "rgba(255,255,255,0.85)");
+
+  // Late slips
+  for (const ic of L3.lateIcons) {
+    const sx = ic.x - L3.camX;
+    const x = Math.round(sx);
+    const y = Math.round(ic.y);
+    drawPixelRect(x - 1, y - 1, 14, 16, "rgba(0,0,0,0.20)");
+    drawPixelRect(x, y, 12, 14, "rgba(255,255,255,0.92)");
+    ctx.fillStyle = "rgba(40,40,40,0.75)";
+    ctx.font = "900 10px system-ui, Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("L", x + 6, y + 11);
+  }
+
+  // Carolers
+  for (const c of L3.carolers) {
+    const sx = c.x - L3.camX;
+    const w = (c.w / c.scale), h = (c.h / c.scale);
+    drawPixelRect(sx - 1, floorY - h - 1, w + 2, h + 2, "rgba(0,0,0,0.18)");
+    drawPixelRect(sx, floorY - h, w, h, "rgba(255,255,255,0.25)");
+    drawPixelRect(sx + 3, floorY - h + 10, w - 6, h - 14, "rgba(255,255,255,0.55)");
+    drawPixelRect(sx + Math.round(w * 0.35), floorY - h + 3, Math.round(w * 0.3), 7, "rgba(255,255,255,0.65)");
+  }
+
+  // Michelle
+  if (L3.michelle.active) {
+    const mx = L3.michelle.x - L3.camX;
+    drawNPC(mx, floorY - 64, 42, 64, "#ffd35a", "MICHELLE");
+  }
+
+  // Player
+  drawPlayer();
+
+  // FX
+  drawConfetti();
+  drawSparkles();
+  drawNotes();
+
+  // Flash overlay
+  if (FX.flashT > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${clamp(FX.flashT * 4, 0, 0.85)})`;
+    ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
+  }
+
+  // HUD
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.font = "800 14px system-ui, Arial";
+  ctx.textAlign = "left";
+  ctx.fillText(`LEVEL 3 — LATE SLIPS`, 14, 24);
+  ctx.fillText(`Score: ${Math.floor(L1.score + L2.score + L3.score)}`, 14, 44);
+  ctx.fillText(`Time: ${Math.ceil(L3.phaseT)}s`, 14, 64);
+
+  if (L3.carolDebuffT > 0) {
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.textAlign = "right";
+    ctx.fillText(`Carolers got you!`, VIEW.gw - 14, 24);
+    ctx.fillText(`No jump: ${Math.ceil(L3.noJumpT)}s`, VIEW.gw - 14, 44);
+  }
+
+  // End overlays
+  if (L3.endStage === "freeze") {
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
+    ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
+  }
+
+  if (L3.endStage === "summary") {
+    ctx.fillStyle = "rgba(0,0,0,0.62)";
+    ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
+
+    ctx.fillStyle = "rgba(255,255,255,0.97)";
+    ctx.textAlign = "center";
+    ctx.font = "900 30px system-ui, Arial";
+    ctx.fillText("ASSIGNMENTS COLLECTED", VIEW.gw / 2, VIEW.gh * 0.40);
+
+    ctx.font = "800 18px system-ui, Arial";
+    ctx.fillText(`Final Score: ${Math.floor(L1.score + L2.score + L3.score)}`, VIEW.gw / 2, VIEW.gh * 0.50);
+
+    ctx.font = "700 14px system-ui, Arial";
+    ctx.fillStyle = "rgba(255,255,255,0.78)";
+    ctx.fillText("Press Enter • Tap/click center to view credits", VIEW.gw / 2, VIEW.gh * 0.62);
+  }
+}
+
+function drawCredits() {
+  clearScreen();
+  ctx.fillStyle = "rgba(255,255,255,0.96)";
+  ctx.textAlign = "center";
+  ctx.font = "900 34px system-ui, Arial";
+  ctx.fillText("CREDITS", VIEW.gw / 2, VIEW.gh * 0.22);
+
+  ctx.font = "800 16px system-ui, Arial";
+  ctx.fillText("Thanks for playing!", VIEW.gw / 2, VIEW.gh * 0.32);
+
+  ctx.font = "700 14px system-ui, Arial";
+  ctx.fillStyle = "rgba(255,255,255,0.78)";
+  ctx.fillText("Trojan Trek • Fill the Bus • Holiday Hallway Games", VIEW.gw / 2, VIEW.gh * 0.42);
+
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.font = "800 16px system-ui, Arial";
+  ctx.fillText(`Final Score: ${Math.floor(L1.score + L2.score + L3.score)}`, VIEW.gw / 2, VIEW.gh * 0.56);
+
+  ctx.fillStyle = "rgba(255,255,255,0.65)";
+  ctx.font = "700 12px system-ui, Arial";
+  ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.72);
+}
+
 
   // -------------------- Keyboard controls --------------------
   window.addEventListener("keydown", (e) => {
@@ -2856,6 +3282,12 @@ function drawLevel2() {
         }
       }
 
+
+      if (e.key === "Enter" && L2.done) {
+        resetLevel3();
+        state.screen = "level3";
+        SFX.start();
+      }
       if (e.key === "Escape") {
         state.screen = "select";
         resetLevel1();
@@ -2868,6 +3300,37 @@ function drawLevel2() {
     }
   });
 
+
+    if (state.screen === "level3") {
+      if ((e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") && player.onGround && L3.endStage === "play") {
+        if (L3.noJumpT <= 0) {
+          player.vy = -PHYS.jumpV;
+          player.onGround = false;
+          SFX.jump();
+        }
+      }
+      if (e.key === "Enter" && L3.endStage === "summary") {
+        state.screen = "credits";
+        SFX.start();
+      }
+      if (e.key === "Escape") {
+        state.screen = "select";
+        resetLevel1();
+        SFX.tick();
+      }
+      if (e.key === "r" || e.key === "R") {
+        resetLevel3();
+        SFX.tick();
+      }
+    }
+
+    if (state.screen === "credits") {
+      if (e.key === "Escape") {
+        state.screen = "select";
+        resetLevel1();
+        SFX.tick();
+      }
+    }
   window.addEventListener("keyup", (e) => keys.delete(e.key));
 
   // -------------------- Touch controls --------------------
@@ -2965,6 +3428,43 @@ function drawLevel2() {
       }
       return;
     }
+
+    if (state.screen === "level2") {
+      if (L2.done && gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+        resetLevel3();
+        state.screen = "level3";
+        SFX.start();
+        return;
+      }
+    }
+
+    if (state.screen === "level3") {
+      if (L3.endStage === "summary" && gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+        state.screen = "credits";
+        SFX.start();
+        return;
+      }
+      if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+        if (player.onGround && L3.endStage === "play" && L3.noJumpT <= 0) {
+          player.vy = -PHYS.jumpV;
+          player.onGround = false;
+          SFX.jump();
+        }
+        clearTouch();
+      } else {
+        setTouchFromGX(gx);
+      }
+      return;
+    }
+
+    if (state.screen === "credits") {
+      if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+        state.screen = "select";
+        resetLevel1();
+        SFX.tick();
+      }
+      return;
+    }
   });
 
   canvas.addEventListener("pointermove", (e) => {
@@ -3007,6 +3507,13 @@ function drawLevel2() {
     else if (state.screen === "level2") {
       updateLevel2(dt);
       drawLevel2();
+    }
+    else if (state.screen === "level3") {
+      updateLevel3(dt);
+      drawLevel3();
+    }
+    else if (state.screen === "credits") {
+      drawCredits();
     }
 
     ctx.restore();
