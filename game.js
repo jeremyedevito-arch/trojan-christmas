@@ -354,6 +354,7 @@
     // NEW: Shelley Gingras speed boost (Phase A/B only)
     shelley: { x: 260, dir: 1, speed: 36, cd: 0 },
     boostT: 0,
+    accBoostT: 0,
     boostLevel: 1,
 
     // NEW: March Hare (Phase A only)
@@ -411,6 +412,7 @@
     // Shelley boost
     L1.shelley = { x: 260, dir: 1, speed: 36, cd: 0 };
     L1.boostT = 0;
+    L1.accBoostT = 0;
     L1.boostLevel = 1;
 
     // March Hare
@@ -463,10 +465,12 @@
 
     if (box.hasCarrot) {
       L1.carrots.push({
-        x: box.x + box.w / 2 - 8,
-        y: box.y - 10,
-        w: 16,
-        h: 12,
+        x: box.x + box.w / 2 - 16,
+        y: box.y - 16,
+        w: 32,
+        h: 24,
+        scale: 2,
+        collectedT: 0,
         vy: -420,
         alive: true,
       });
@@ -477,13 +481,21 @@
   function updateCarrots(dt, floorY) {
     for (const c of L1.carrots) {
       if (!c.alive) continue;
+
+      // linger after collection
+      if (c.collectedT > 0) {
+        c.collectedT -= dt;
+        if (c.collectedT <= 0) c.alive = false;
+        continue;
+      }
+
       c.vy += 1400 * dt;
       c.y += c.vy * dt;
       if (c.y > floorY + 200) c.alive = false;
 
       const cx = c.x - L1.camX;
       if (rectsOverlap(player.x, player.y, player.w, player.h, cx, c.y, c.w, c.h)) {
-        c.alive = false;
+        c.collectedT = 2.0; // stay on screen briefly
         L1.score += 100;
         SFX.collect();
         spawnSparkles(player.x + player.w * 0.5, player.y + 10, 12);
@@ -523,8 +535,10 @@
     let vx = clamp(520 + (dx - sweet) * 0.55, 360, 780);
     let vy = -680 - (err * 0.45);
 
-    vx += (Math.random() * 2 - 1) * 70;
-    vy += (Math.random() * 2 - 1) * 110;
+    const acc = (L1.accBoostT && L1.accBoostT > 0) ? 0.5 : 1.0;
+
+    vx += (Math.random() * 2 - 1) * 70 * acc;
+    vy += (Math.random() * 2 - 1) * 110 * acc;
 
     vx = clamp(vx, 340, 820);
     vy = clamp(vy, -980, -420);
@@ -632,8 +646,9 @@
 function updateNPCs(dt) {
   const floorY = VIEW.gh * 0.78;
 
-  // ---------------- Shelley Gingras (Phase A/B speed boost) ----------------
-  if (L1.phase === "carrot" || L1.phase === "shot") {
+  // ---------------- Shelley Gingras ----------------
+  // Phase A (carrot): speed boost (double for 5s, then triple if hit again while boosted)
+  if (L1.phase === "carrot") {
     const sh = L1.shelley;
     sh.x += sh.dir * sh.speed * dt;
     if (sh.x < 140) { sh.x = 140; sh.dir = 1; }
@@ -642,11 +657,28 @@ function updateNPCs(dt) {
 
     const shY = floorY - 44;
     if (sh.cd <= 0 && rectsOverlap(player.x, player.y, player.w, player.h, sh.x, shY, 16, 44)) {
-      // If you hit Shelley while boosted, you upgrade (max triple)
       if (L1.boostLevel < 2) L1.boostLevel = 2;
       else if (L1.boostLevel < 3) L1.boostLevel = 3;
 
       L1.boostT = 5.0;
+      sh.cd = 0.65;
+
+      SFX.start();
+      spawnSparkles(sh.x + 8, shY + 14, 14);
+    }
+  }
+
+  // Phase B (shot): accuracy boost (+50% accuracy for 5s)
+  if (L1.phase === "shot") {
+    const sh = L1.shelley;
+    sh.x += sh.dir * sh.speed * dt;
+    if (sh.x < 140) { sh.x = 140; sh.dir = 1; }
+    if (sh.x > VIEW.gw * 0.52) { sh.x = VIEW.gw * 0.52; sh.dir = -1; }
+    if (sh.cd > 0) sh.cd -= dt;
+
+    const shY = floorY - 44;
+    if (sh.cd <= 0 && rectsOverlap(player.x, player.y, player.w, player.h, sh.x, shY, 16, 44)) {
+      L1.accBoostT = 5.0;
       sh.cd = 0.65;
 
       SFX.start();
@@ -825,6 +857,11 @@ function updateFX(dt) {
     if (L1.boostT > 0) {
       L1.boostT -= dt;
       if (L1.boostT <= 0) { L1.boostT = 0; L1.boostLevel = 1; }
+    }
+
+    if (L1.accBoostT > 0) {
+      L1.accBoostT -= dt;
+      if (L1.accBoostT < 0) L1.accBoostT = 0;
     }
 
     const move = PHYS.moveSpeed * (L1.boostLevel || 1);
@@ -1182,19 +1219,20 @@ function updateFX(dt) {
     drawPixelRect(bx + 2, legY + Math.max(0, -step), 6, 9, st.pants);
     drawPixelRect(bx + bodyW - 8, legY + Math.max(0, step), 6, 9, st.pants);
   }
-  function drawCarrot(cx, y) {
+  function drawCarrot(cx, y, scale = 1) {
+    const s = Math.max(1, Math.round(scale));
     const x = Math.round(cx);
     const yy = Math.round(y);
 
-    drawPixelRect(x + 3, yy + 3, 10, 10, "rgba(0,0,0,0.25)");
+    drawPixelRect(x + 3 * s, yy + 3 * s, 10 * s, 10 * s, "rgba(0,0,0,0.25)");
 
-    drawPixelRect(x + 6, yy + 0, 4, 2, "#2FE35F");
-    drawPixelRect(x + 5, yy + 2, 6, 2, "#3CFF74");
+    drawPixelRect(x + 6 * s, yy + 0 * s, 4 * s, 2 * s, "#2FE35F");
+    drawPixelRect(x + 5 * s, yy + 2 * s, 6 * s, 2 * s, "#3CFF74");
 
-    drawPixelRect(x + 4, yy + 4, 8, 2, "#FF9A3A");
-    drawPixelRect(x + 5, yy + 6, 6, 2, "#FF8A2A");
-    drawPixelRect(x + 6, yy + 8, 4, 2, "#FF7A1A");
-    drawPixelRect(x + 7, yy + 10, 2, 2, "#FF5A00");
+    drawPixelRect(x + 4 * s, yy + 4 * s, 8 * s, 2 * s, "#FF9A3A");
+    drawPixelRect(x + 5 * s, yy + 6 * s, 6 * s, 2 * s, "#FF8A2A");
+    drawPixelRect(x + 6 * s, yy + 8 * s, 4 * s, 2 * s, "#FF7A1A");
+    drawPixelRect(x + 7 * s, yy + 10 * s, 2 * s, 2 * s, "#FF5A00");
   }
 
   function drawCrate(x, y, w, h, opened, decoy) {
@@ -1291,41 +1329,64 @@ function drawShelley() {
   }
 }
 
-function drawMissingPosters() {
-  if (L1.phase !== "carrot") return;
+function drawHallPosters() {
   const floorY = VIEW.gh * 0.78;
 
-  // Parallax offset so they "scroll" with the hallway
-  const period = 320;
-  const off = (L1.camX * 0.45) % period;
+  const period = 300;
+  const off = ((L1.camX || 0) * 0.45) % period;
 
-  for (let i = 0; i < 4; i++) {
-    const x = Math.round(90 + i * period - off);
-    const y = Math.round(floorY - 120);
+  function poster(x, y, header, line1, line2, accent = "rgba(128,0,32,0.55)") {
+    drawPixelRect(x, y, 92, 56, "rgba(255,255,255,0.14)");
+    drawPixelRect(x + 2, y + 2, 88, 52, "rgba(0,0,0,0.35)");
 
-    // poster sheet
-    drawPixelRect(x, y, 84, 54, "rgba(255,255,255,0.14)");
-    drawPixelRect(x + 2, y + 2, 80, 50, "rgba(0,0,0,0.35)");
-
-    // header strip
-    drawPixelRect(x + 2, y + 2, 80, 10, "rgba(128,0,32,0.55)");
+    drawPixelRect(x + 2, y + 2, 88, 12, accent);
     ctx.fillStyle = "rgba(255,255,255,0.90)";
     ctx.font = "900 9px system-ui, Arial";
     ctx.textAlign = "left";
-    ctx.fillText("MISSING:", x + 6, y + 10);
+    ctx.fillText(header, x + 6, y + 11);
 
-    // bunny silhouette
-    drawPixelRect(x + 10, y + 20, 10, 14, "rgba(255,255,255,0.18)");
-    drawPixelRect(x + 8, y + 18, 4, 6, "rgba(255,255,255,0.18)");
-    drawPixelRect(x + 16, y + 18, 4, 6, "rgba(255,255,255,0.18)");
-
-    // "March Hare" text
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.fillStyle = "rgba(255,255,255,0.80)";
     ctx.font = "800 9px system-ui, Arial";
-    ctx.fillText("March Hare", x + 28, y + 30);
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
-    ctx.font = "700 8px system-ui, Arial";
-    ctx.fillText("Reward: 300", x + 28, y + 42);
+    ctx.fillText(line1, x + 8, y + 30);
+
+    if (line2) {
+      ctx.fillStyle = "rgba(255,255,255,0.60)";
+      ctx.font = "700 8px system-ui, Arial";
+      ctx.fillText(line2, x + 8, y + 42);
+    }
+  }
+
+  if (L1.phase === "carrot") {
+    for (let i = 0; i < 5; i++) {
+      const x = Math.round(70 + i * period - off);
+      const y = Math.round(floorY - 122);
+
+      if (i % 2 === 0) {
+        poster(x, y, "MISSING:", "March Hare", "Reward: 300");
+
+        drawPixelRect(x + 64, y + 22, 10, 14, "rgba(255,255,255,0.18)");
+        drawPixelRect(x + 62, y + 20, 4, 6, "rgba(255,255,255,0.18)");
+        drawPixelRect(x + 70, y + 20, 4, 6, "rgba(255,255,255,0.18)");
+      } else {
+        poster(x, y, "IB", "Accelerated Learning", "", "rgba(20,60,120,0.55)");
+      }
+    }
+  }
+
+  if (L1.phase === "shot") {
+    for (let i = 0; i < 6; i++) {
+      const x = Math.round(60 + i * period - off);
+      const y = Math.round(floorY - 122);
+      poster(x, y, "IB", "Elevated Learning", "", "rgba(20,60,120,0.55)");
+    }
+  }
+
+  if (L1.phase === "colouring") {
+    for (let i = 0; i < 6; i++) {
+      const x = Math.round(60 + i * period - off);
+      const y = Math.round(floorY - 122);
+      poster(x, y, "HTHS", "Christmas Colouring", "Color every square!", "rgba(0,110,70,0.55)");
+    }
   }
 }
 
@@ -1545,7 +1606,10 @@ function drawMarchHare() {
       }
       for (const c of L1.carrots) {
         const cx = c.x - L1.camX;
-        drawCarrot(cx, c.y);
+        ctx.save();
+        if (c.collectedT > 0) ctx.globalAlpha = 0.55;
+        drawCarrot(cx, c.y, c.scale || 1);
+        ctx.restore();
       }
     }
 
@@ -1578,12 +1642,14 @@ function drawMarchHare() {
 
     // NPCs foreground (phase-specific)
     if (L1.phase === "carrot") {
-      drawMissingPosters();
+      drawHallPosters();
       drawMarchHare();
       drawShelley();
     } else if (L1.phase === "shot") {
+      drawHallPosters();
       drawShelley();
     } else if (L1.phase === "colouring") {
+      drawHallPosters();
       drawLateIcons();
       drawJamie();
     }
