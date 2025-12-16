@@ -828,14 +828,23 @@
   // ======================================================================
   const L2 = {
     camX: 0,
+    worldW: 2400,
+    time: 0,
+    duration: 60, // ~1 minute for Phase A (Trojan Trek)
+    autoSpeed: 220,
+    stallT: 0,
+    stallCause: "",
+    npcs: [],
     score: 0,
     done: false,
     bannerT: 0,
     bannerText: "",
     platforms: [],
     coins: [],
+    nextCoinX: 260,
     collected: 0,
     target: 0,
+    stolen: 0,
   };
 
   function showL2Banner(text) {
@@ -845,47 +854,50 @@
 
   function resetLevel2() {
     L2.camX = 0;
+    L2.worldW = 14000;
+    L2.time = 0;
     L2.score = 0;
     L2.done = false;
     L2.bannerT = 0;
     L2.bannerText = "";
+    L2.stallT = 0;
+    L2.stallCause = "";
+    L2.stolen = 0;
     L2.collected = 0;
+    L2.nextCoinX = 260;
 
     const floorY = VIEW.gh * 0.78;
 
-    // Simple “gym/cafeteria” platform layout (basic shapes)
-    L2.platforms = [
-      { x: 0, y: floorY, w: 2400, h: VIEW.gh - floorY }, // floor span
-      { x: 260, y: floorY - 70, w: 140, h: 16 },
-      { x: 520, y: floorY - 120, w: 170, h: 16 },
-      { x: 820, y: floorY - 90, w: 160, h: 16 },
-      { x: 1100, y: floorY - 150, w: 190, h: 16 },
-      { x: 1480, y: floorY - 105, w: 170, h: 16 },
-      { x: 1780, y: floorY - 140, w: 190, h: 16 },
-      { x: 2100, y: floorY - 90, w: 170, h: 16 },
-    ];
-
-    // Coins to collect (classic)
-    L2.coins = [];
-    const coinSpots = [
-      { x: 300, y: floorY - 100 },
-      { x: 360, y: floorY - 100 },
-      { x: 560, y: floorY - 150 },
-      { x: 640, y: floorY - 150 },
-      { x: 860, y: floorY - 120 },
-      { x: 1140, y: floorY - 180 },
-      { x: 1220, y: floorY - 180 },
-      { x: 1520, y: floorY - 135 },
-      { x: 1820, y: floorY - 170 },
-      { x: 1900, y: floorY - 170 },
-      { x: 2140, y: floorY - 120 },
-      { x: 2220, y: floorY - 120 },
-    ];
-    for (const s of coinSpots) {
-      L2.coins.push({ x: s.x, y: s.y, r: 7, alive: true, bob: Math.random() * 6.28 });
+    // Phase A: Trojan Trek (auto-run)
+    // Floor span + a repeating set of “jump pads” for coins.
+    L2.platforms = [{ x: 0, y: floorY, w: L2.worldW, h: VIEW.gh - floorY }];
+    for (let x = 380; x < L2.worldW - 300; x += 520) {
+      const h = 14 + Math.floor(Math.random() * 6);
+      const y = floorY - (70 + Math.floor(Math.random() * 90));
+      const w = 150 + Math.floor(Math.random() * 110);
+      L2.platforms.push({ x, y, w, h });
     }
 
-    L2.target = L2.coins.length;
+    // Coins spawn progressively so we can support a longer run.
+    L2.coins = [];
+    spawnCoinsAhead(floorY);
+
+    // NPC obstacles for Phase A
+    const npcH = 54;
+    L2.npcs = [
+      // King Priam (djeremy) — steals a coin on contact
+      { type: "priam", x: 980, y: floorY - npcH, w: 40, h: npcH, hitT: 0 },
+      { type: "priam", x: 4200, y: floorY - npcH, w: 40, h: npcH, hitT: 0 },
+      { type: "priam", x: 8600, y: floorY - npcH, w: 40, h: npcH, hitT: 0 },
+
+      // VP Marcy Keith — stalls you briefly (camera keeps moving → you miss coins)
+      { type: "marcy", x: 2200, y: floorY - npcH, w: 42, h: npcH, hitT: 0 },
+      { type: "marcy", x: 6000, y: floorY - npcH, w: 42, h: npcH, hitT: 0 },
+      { type: "marcy", x: 10400, y: floorY - npcH, w: 42, h: npcH, hitT: 0 },
+    ];
+
+    // HUD goal is “how many you can grab in a minute” (not an all-or-nothing sweep)
+    L2.target = 60;
 
     // Player start
     player.x = 120;
@@ -900,6 +912,33 @@
     FX.sparkles = [];
 
     showL2Banner("LEVEL 2 — MONEY RUN!");
+  }
+
+  function spawnCoinsAhead(floorY) {
+    const spawnToX = L2.camX + VIEW.gw + 720;
+    while (L2.nextCoinX < spawnToX && L2.nextCoinX < L2.worldW - 120) {
+      const x = L2.nextCoinX;
+      const pattern = Math.random();
+
+      // Most coins are on the floor line; occasionally float (encourage jumps).
+      const baseY = floorY - (90 + Math.floor(Math.random() * 40));
+
+      if (pattern < 0.55) {
+        L2.coins.push({ x, y: baseY, r: 7, alive: true, bob: Math.random() * 6.28 });
+      } else if (pattern < 0.82) {
+        // short 3-coin arc
+        for (let i = 0; i < 3; i++) {
+          L2.coins.push({ x: x + i * 36, y: baseY - (i === 1 ? 18 : 0), r: 7, alive: true, bob: Math.random() * 6.28 });
+        }
+      } else {
+        // small ladder
+        for (let i = 0; i < 4; i++) {
+          L2.coins.push({ x: x + i * 22, y: baseY - i * 16, r: 7, alive: true, bob: Math.random() * 6.28 });
+        }
+      }
+
+      L2.nextCoinX += 120 + Math.floor(Math.random() * 90);
+    }
   }
 
   function resolvePlatforms(prevX, prevY, floorY) {
@@ -935,42 +974,57 @@
   function updateLevel2(dt) {
     const floorY = VIEW.gh * 0.78;
 
-    if (L2.bannerT > 0) L2.bannerT -= dt;
+    if (L2.done) {
+      updateFX(dt);
+      return;
+    }
 
+    // Timers
+    L2.time += dt;
+    if (L2.bannerT > 0) L2.bannerT -= dt;
+    if (L2.stallT > 0) L2.stallT -= dt;
+
+    // Auto-scroll forward (core mechanic for Phase A)
+    L2.camX = clamp(L2.camX + L2.autoSpeed * dt, 0, Math.max(0, L2.worldW - VIEW.gw));
+
+    // Input (minor lane control)
     const left = touch.left || keys.has("ArrowLeft") || keys.has("a") || keys.has("A");
     const right = touch.right || keys.has("ArrowRight") || keys.has("d") || keys.has("D");
 
+    const ctrl = (L2.stallT > 0) ? 0.25 : 1.0;
     player.vx = 0;
-    if (left) player.vx -= PHYS.moveSpeed;
-    if (right) player.vx += PHYS.moveSpeed;
+    if (left) player.vx -= PHYS.moveSpeed * ctrl;
+    if (right) player.vx += PHYS.moveSpeed * ctrl;
+
+    // While stalled, gently drag the player left so coins slip by.
+    if (L2.stallT > 0) player.vx -= 110;
 
     if (player.vx < -5) player.facing = -1;
     else if (player.vx > 5) player.facing = 1;
 
     const prevX = player.x;
     const prevY = player.y;
-
     player.x += player.vx * dt;
 
-    // Camera follows gently
-    const worldX = player.x + L2.camX;
-    const desiredCam = clamp(worldX - VIEW.gw * 0.35, 0, 2400 - VIEW.gw);
-    L2.camX += (desiredCam - L2.camX) * Math.min(1, dt * 8);
+    // Keep player within a forward "running band"
+    player.x = clamp(player.x, 60, VIEW.gw * 0.70);
 
-    // Keep player within screen band
-    player.x = clamp(player.x, 60, VIEW.gw * 0.80);
-
+    // Gravity + platforms
     player.vy += PHYS.gravity * dt;
     player.y += player.vy * dt;
-
     resolvePlatforms(prevX, prevY, floorY);
 
-    // Coins
+    // Spawn + prune coins
+    spawnCoinsAhead(floorY);
+    L2.coins = L2.coins.filter(c => c.alive && c.x > (L2.camX - 200));
+
+    // Coins collide (screen-space vs camera)
     for (const c of L2.coins) {
       if (!c.alive) continue;
       c.bob += dt * 4.2;
       const cx = c.x - L2.camX;
       const cy = c.y + Math.sin(c.bob) * 3;
+      if (cx < -40 || cx > VIEW.gw + 40) continue;
 
       if (rectsOverlap(player.x, player.y, player.w, player.h, cx - c.r, cy - c.r, c.r * 2, c.r * 2)) {
         c.alive = false;
@@ -981,8 +1035,40 @@
       }
     }
 
-    // Win condition
-    if (!L2.done && L2.collected >= L2.target) {
+    // NPCs collide
+    for (const n of L2.npcs) {
+      if (n.hitT > 0) n.hitT -= dt;
+      const nx = n.x - L2.camX;
+      if (nx + n.w < -80 || nx > VIEW.gw + 80) continue;
+
+      if (n.hitT <= 0 && rectsOverlap(player.x, player.y, player.w, player.h, nx, n.y, n.w, n.h)) {
+        n.hitT = 1.05;
+
+        if (n.type === "priam") {
+          if (L2.collected > 0) {
+            L2.collected -= 1;
+            L2.stolen += 1;
+            L2.score = Math.max(0, L2.score - 100);
+          }
+          L2.stallT = Math.max(L2.stallT, 0.45);
+          L2.stallCause = "Priam";
+          showL2Banner("KING PRIAM TOOK A COIN!");
+          SFX.decoy();
+          spawnSparkles(player.x + player.w * 0.5, player.y + 10, 10);
+        }
+
+        if (n.type === "marcy") {
+          L2.stallT = Math.max(L2.stallT, 2.2);
+          L2.stallCause = "Marcy";
+          showL2Banner("MARCY RECRUITED YOU — KEEP MOVING!");
+          SFX.tick();
+          spawnSparkles(player.x + player.w * 0.5, player.y + 10, 8);
+        }
+      }
+    }
+
+    // End of Phase A (~1 minute)
+    if (!L2.done && (L2.time >= L2.duration || L2.camX >= (L2.worldW - VIEW.gw - 2))) {
       L2.done = true;
       L2.score += 500;
       SFX.dingding();
@@ -1032,14 +1118,19 @@
     }
 
     drawPixelRect(0, floorY, VIEW.gw, VIEW.gh - floorY, "rgba(255,255,255,0.10)");
+    const drift = (state.screen === "level2")
+      ? (L2.camX * 0.35 % 36)
+      : (L1.phase === "carrot" ? (L1.camX * 0.35 % 36) : 0);
     for (let i = 0; i < 28; i++) {
-      const x = i * 36 - (L1.phase === "carrot" ? (L1.camX * 0.35 % 36) : 0);
+      const x = i * 36 - drift;
       drawPixelRect(x, floorY + 18, 2, VIEW.gh - floorY, "rgba(0,0,0,0.16)");
     }
 
     const baseX = (state.screen === "level1" && L1.phase === "carrot")
       ? (-(L1.camX * 0.55) % 110)
-      : (-(state.t * 30) % 110);
+      : (state.screen === "level2")
+        ? (-(L2.camX * 0.55) % 110)
+        : (-(state.t * 30) % 110);
 
     const lockerY = floorY - 140;
     for (let i = 0; i < 14; i++) {
@@ -1472,6 +1563,49 @@
     drawPixelRect(xx - r + 2, yy - r + 2, r * 2 - 4, r * 2 - 4, "rgba(255,255,255,0.22)");
   }
 
+  // -------------------- Level 2 NPCs + signage --------------------
+  function drawPoster(x, y, w, h, title, accent = "#FF5EA8") {
+    drawPixelRect(x - 1, y - 1, w + 2, h + 2, "rgba(0,0,0,0.35)");
+    drawPixelRect(x, y, w, h, "rgba(255,255,255,0.10)");
+    drawPixelRect(x, y, w, 3, accent);
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.font = "800 11px system-ui, Arial";
+    ctx.textAlign = "left";
+    ctx.fillText(title, x + 8, y + 18);
+  }
+
+  function drawPriamNPC(x, y, w, h) {
+    // Crown
+    drawPixelRect(x + 10, y + 2, w - 20, 7, "#FFD24D");
+    drawPixelRect(x + 14, y, 4, 4, "#FFD24D");
+    drawPixelRect(x + w - 18, y, 4, 4, "#FFD24D");
+
+    // Head
+    drawPixelRect(x + 12, y + 9, w - 24, 14, "#FFD2B5");
+    // Beard-ish shadow
+    drawPixelRect(x + 12, y + 20, w - 24, 5, "rgba(0,0,0,0.18)");
+
+    // Maroon toga
+    drawPixelRect(x + 8, y + 24, w - 16, h - 28, "rgba(128,0,32,0.85)");
+    drawPixelRect(x + 8, y + 32, w - 16, 3, "rgba(255,210,77,0.22)");
+
+    // Beggar bucket
+    drawPixelRect(x + w - 12, y + h - 18, 10, 10, "rgba(0,0,0,0.45)");
+    drawPixelRect(x + w - 11, y + h - 17, 8, 8, "rgba(255,255,255,0.18)");
+  }
+
+  function drawMarcyNPC(x, y, w, h) {
+    // Hair
+    drawPixelRect(x + 10, y + 6, w - 20, 6, "#6B3B2A");
+    // Head
+    drawPixelRect(x + 12, y + 12, w - 24, 14, "#FFD2B5");
+    // Jacket
+    drawPixelRect(x + 8, y + 26, w - 16, h - 30, "rgba(77,163,255,0.70)");
+    drawPixelRect(x + 8, y + 34, w - 16, 2, "rgba(255,255,255,0.22)");
+    // Clipboard / poster edge
+    drawPixelRect(x - 6, y + 30, 8, 16, "rgba(255,255,255,0.15)");
+  }
+
   function drawLevel2() {
     const floorY = VIEW.gh * 0.78;
     drawHallwayBackdrop(floorY); // placeholder background for now
@@ -1483,6 +1617,30 @@
       const col = (p.y >= floorY) ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.16)";
       drawPixelRect(x, p.y, p.w, p.h, col);
       drawPixelRect(x, p.y, p.w, 2, "rgba(0,0,0,0.22)");
+    }
+
+    // Scrolling posters / signage (simple Easter eggs)
+    // Helen & Paris posters every so often
+    for (let wx = 720; wx < L2.worldW; wx += 1600) {
+      const sx = wx - L2.camX;
+      if (sx > -120 && sx < VIEW.gw + 40) {
+        drawPoster(sx, 72, 108, 44, "HELEN & PARIS", "rgba(128,0,32,0.85)");
+      }
+    }
+
+    // NPCs (obstacles)
+    for (const n of L2.npcs) {
+      const nx = n.x - L2.camX;
+      if (nx + n.w < -80 || nx > VIEW.gw + 80) continue;
+
+      if (n.type === "marcy") {
+        // Trail Relay poster beside Marcy
+        const px = nx - 52;
+        if (px > -120 && px < VIEW.gw + 40) drawPoster(px, n.y - 58, 90, 44, "TRAIL RELAY", "#6BFF7A");
+        drawMarcyNPC(nx, n.y, n.w, n.h);
+      } else if (n.type === "priam") {
+        drawPriamNPC(nx, n.y, n.w, n.h);
+      }
     }
 
     // Coins
@@ -1517,6 +1675,17 @@
 
     drawPhaseBanner(L2.bannerText, L2.bannerT);
 
+    // Stall feedback overlay
+    if (!L2.done && L2.stallT > 0) {
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.font = "800 14px system-ui, Arial";
+      ctx.textAlign = "center";
+      const msg = (L2.stallCause === "Marcy") ? "Recruitment stall!" : "Beggar bucket hit!";
+      ctx.fillText(msg, VIEW.gw / 2, VIEW.gh * 0.18);
+    }
+
     if (L2.done) {
       ctx.fillStyle = "rgba(0,0,0,0.55)";
       ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
@@ -1527,7 +1696,7 @@
       ctx.fillText("LEVEL 2 (PHASE 1) COMPLETE!", VIEW.gw / 2, VIEW.gh * 0.42);
 
       ctx.font = "800 16px system-ui, Arial";
-      ctx.fillText("Nice. Next: Food donations (later).", VIEW.gw / 2, VIEW.gh * 0.50);
+      ctx.fillText("Nice. Next: Fill the Bus (later).", VIEW.gw / 2, VIEW.gh * 0.50);
 
       ctx.font = "700 13px system-ui, Arial";
       ctx.fillStyle = "rgba(255,255,255,0.75)";
