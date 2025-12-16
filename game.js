@@ -969,6 +969,11 @@ const L2 = {
   slowT: 0,               // Marcy slow timer (Phase A)
   slowMul: 0.35,          // movement multiplier during Marcy slow
 
+  noJumpT: 0,             // cannot-jump timer (Marcy recruitment)
+
+  // Phase B carry that affects jump as well
+  carryTech: 0,            // tech items currently cluttering hands
+
   // Phase B movement debuffs
   slipT: 0,               // snow slip slow
   techT: 0,               // Chris “tech clutter” slow
@@ -1065,6 +1070,9 @@ function resetL2PhaseA() {
   L2.slipT = 0;
   L2.techT = 0;
 
+  L2.noJumpT = 0;
+  L2.carryTech = 0;
+
   L2.bannerT = 0;
   L2.bannerText = "";
 
@@ -1080,6 +1088,8 @@ function resetL2PhaseA() {
   L2.stolen = 0;
   L2.carryFood = 0;
   L2.deliveredFood = 0;
+  L2.carryTech = 0;
+  L2.noJumpT = 0;
 
   const floorY = VIEW.gh * 0.78;
 
@@ -1145,6 +1155,8 @@ function startL2PhaseB() {
   L2.slipT = 0;
   L2.techT = 0;
   L2.carryFood = 0;
+  L2.carryTech = 0;
+  L2.noJumpT = 0;
   // keep L2.score, keep L2.collected from Phase A
 
   // clear Phase A bits
@@ -1388,21 +1400,51 @@ function updateMarcy(dt, floorY) {
     L2.slowT = 5.0;
     m.following = true;
     m.followT = 5.0;
+    L2.noJumpT = 5.0;
     showL2Banner("MARCY: TRAIL RELAY SIGNUP??");
     SFX.tick();
   }
 }
 
 
-function drawFoodItem(x, y) {
+function drawFoodItem(x, y, kind = "can") {
   const xx = Math.round(x);
   const yy = Math.round(y);
-  // simple “can” sprite
-  drawPixelRect(xx - 7, yy - 9, 14, 18, "rgba(0,0,0,0.25)");
-  drawPixelRect(xx - 6, yy - 8, 12, 16, "#C83A3A");
-  drawPixelRect(xx - 6, yy - 8, 12, 3, "rgba(255,255,255,0.25)");
-  drawPixelRect(xx - 6, yy + 4, 12, 3, "rgba(0,0,0,0.22)");
-  drawPixelRect(xx - 2, yy - 1, 4, 2, "#FFD24D");
+
+  // Small shadow
+  drawPixelRect(xx - 9, yy + 9, 18, 3, "rgba(0,0,0,0.22)");
+
+  if (kind === "can") {
+    // canned goods
+    drawPixelRect(xx - 7, yy - 9, 14, 18, "rgba(0,0,0,0.25)");
+    drawPixelRect(xx - 6, yy - 8, 12, 16, "#C83A3A");
+    drawPixelRect(xx - 6, yy - 8, 12, 3, "rgba(255,255,255,0.25)");
+    drawPixelRect(xx - 6, yy + 4, 12, 3, "rgba(0,0,0,0.22)");
+    drawPixelRect(xx - 3, yy - 1, 6, 3, "#FFD24D");
+  } else if (kind === "milk") {
+    // milk carton
+    drawPixelRect(xx - 7, yy - 10, 14, 20, "rgba(0,0,0,0.25)");
+    drawPixelRect(xx - 6, yy - 9, 12, 18, "rgba(255,255,255,0.86)");
+    drawPixelRect(xx - 6, yy - 9, 12, 5, "rgba(123,214,255,0.35)");
+    drawPixelRect(xx - 2, yy - 12, 4, 3, "rgba(255,255,255,0.80)");
+    drawPixelRect(xx - 1, yy - 11, 2, 2, "rgba(0,0,0,0.12)");
+    drawPixelRect(xx - 3, yy - 2, 6, 3, "rgba(128,0,32,0.55)");
+  } else if (kind === "bread") {
+    // loaf of bread
+    drawPixelRect(xx - 9, yy - 6, 18, 14, "rgba(0,0,0,0.25)");
+    drawPixelRect(xx - 8, yy - 5, 16, 12, "rgba(255,183,74,0.95)");
+    drawPixelRect(xx - 6, yy - 7, 12, 4, "rgba(255,210,120,0.95)");
+    drawPixelRect(xx - 5, yy + 1, 10, 2, "rgba(0,0,0,0.15)");
+    drawPixelRect(xx - 2, yy - 1, 4, 2, "rgba(128,0,32,0.55)");
+  } else {
+    // veggies bundle
+    drawPixelRect(xx - 8, yy - 7, 16, 16, "rgba(0,0,0,0.22)");
+    drawPixelRect(xx - 7, yy - 6, 14, 14, "rgba(46,227,95,0.80)");
+    drawPixelRect(xx - 2, yy - 6, 4, 14, "rgba(0,0,0,0.10)");
+    drawPixelRect(xx - 6, yy - 2, 5, 6, "rgba(255,90,0,0.85)");
+    drawPixelRect(xx + 1, yy - 2, 5, 6, "rgba(255,210,77,0.85)");
+    drawPixelRect(xx - 1, yy - 9, 2, 3, "rgba(60,255,116,0.90)");
+  }
 }
 
 function drawSnowPile(x, y, w, h) {
@@ -1426,7 +1468,9 @@ function spawnL2Food(floorY, dt) {
       lane < 0.85 ? (floorY - 138) :
       (floorY - 188);
 
-    L2.foods.push({ x, y, r: 10, alive: true });
+    const kinds = ["can","bread","milk","veg"];
+    const kind = kinds[Math.floor(Math.random()*kinds.length)];
+    L2.foods.push({ x, y, r: 10, alive: true, kind });
   }
 
   const cutoff = L2.camX - 220;
@@ -1461,8 +1505,10 @@ function updateGary(dt, floorY) {
   if (!g.active) return;
 
   g.walkT += dt;
-  const desired = L2.camX + VIEW.gw * 0.60;
-  g.x += (desired - g.x) * Math.min(1, dt * 0.55);
+  const desired = L2.camX + VIEW.gw * 0.58 + Math.sin(g.walkT * 1.3) * 80;
+  g.x += (desired - g.x) * Math.min(1, dt * 0.75);
+  // occasional gentle “pace” wiggle
+  g.x += Math.sin(g.walkT * 2.4) * 22 * dt;
   g.y = floorY - g.h;
 
   if (g.hiCd > 0) g.hiCd -= dt;
@@ -1476,6 +1522,7 @@ function updateGary(dt, floorY) {
       L2.carryFood = 0;
     }
     if (L2.techT > 0) L2.techT = 0;
+    if (L2.carryTech > 0) L2.carryTech = 0;
 
     g.hiCd = 1.2;
     showL2Banner(delivered > 0 ? "GARY: NICE WORK! I’LL TAKE THAT." : "GARY: KEEP IT UP!");
@@ -1490,10 +1537,10 @@ function updateChris(dt, floorY) {
   if (!c.active) return;
 
   c.walkT += dt;
-  const desired = L2.camX + VIEW.gw * 0.72;
-  c.x += (desired - c.x) * Math.min(1, dt * 0.45);
-  const wig = Math.sin(c.walkT * 2.0) * 70;
-  c.x += wig * dt * 0.35;
+  const desired = L2.camX + VIEW.gw * 0.74 + Math.sin(c.walkT * 1.1) * 120;
+  c.x += (desired - c.x) * Math.min(1, dt * 0.65);
+  const wig = Math.sin(c.walkT * 2.6) * 120;
+  c.x += wig * dt * 0.45;
   c.y = floorY - c.h;
 
   if (c.hitCd > 0) c.hitCd -= dt;
@@ -1502,7 +1549,10 @@ function updateChris(dt, floorY) {
   if (c.hitCd <= 0 && rectsOverlap(player.x, player.y, player.w, player.h, sx, c.y, c.w, c.h)) {
     c.hitCd = 1.0;
     L2.techT = 10.0;
-    showL2Banner("CHRIS: TAKE THIS CORD… AND THIS LAPTOP…");
+    // Tech items count as “hands full” for jump penalty
+    const add = 1 + Math.floor(Math.random() * 2); // 1–2 items
+    L2.carryTech = clamp(L2.carryTech + add, 0, 6);
+    showL2Banner(`CHRIS: TAKE THIS CORD… AND THIS LAPTOP… (+${add})`);
     SFX.decoy();
     spawnSparkles(player.x + player.w * 0.5, player.y + 8, 10);
   }
@@ -1543,6 +1593,8 @@ function updateLevel2(dt) {
   // Phase countdown (time pressure)
   L2.phaseT = Math.max(0, L2.phaseT - dt);
 
+  if (L2.noJumpT > 0) L2.noJumpT = Math.max(0, L2.noJumpT - dt);
+
   // Auto-scroll camera (always)
   L2.camX += L2.scrollSpeed * dt;
 
@@ -1568,14 +1620,18 @@ function updateLevel2(dt) {
     move *= 0.88;
 
     // Carry weight slows you a little until Gary takes it
-    const weightMul = clamp(1 - L2.carryFood * 0.03, 0.65, 1);
+    const weightItems = (L2.carryFood + L2.carryTech);
+    const weightMul = clamp(1 - weightItems * 0.03, 0.65, 1);
     move *= weightMul;
 
     // Tech clutter slow (Chris) for 10s, or until Gary clears it
     if (L2.techT > 0) {
       L2.techT = Math.max(0, L2.techT - dt);
       move *= 0.55;
-      if (L2.techT <= 0) showL2Banner("BACK ON TRACK!");
+      if (L2.techT <= 0) {
+        L2.carryTech = 0;
+        showL2Banner("BACK ON TRACK!");
+      }
     }
 
     // Snow slip slow
@@ -1653,7 +1709,7 @@ function updateLevel2(dt) {
 
       if (rectsOverlap(player.x, player.y, player.w, player.h, fx - 10, fy - 10, 20, 20)) {
         f.alive = false;
-        L2.carryFood += 1;
+        L2.carryFood = clamp(L2.carryFood + 1, 0, 6);
         L2.score += 120;
         SFX.collect();
         spawnSparkles(player.x + player.w * 0.5, player.y + 10, 10);
@@ -2316,11 +2372,32 @@ function drawMarchHare() {
 
 // -------------------- Level 2 draw --------------------
 function drawCoin(x, y, r) {
+  // Slightly nicer “coin” (pixel-y circle with rim + shine)
   const xx = Math.round(x);
   const yy = Math.round(y);
-  drawPixelRect(xx - r - 1, yy - r - 1, r * 2 + 2, r * 2 + 2, "rgba(0,0,0,0.28)");
-  drawPixelRect(xx - r, yy - r, r * 2, r * 2, "#FFD24D");
-  drawPixelRect(xx - r + 2, yy - r + 2, r * 2 - 4, r * 2 - 4, "rgba(255,255,255,0.22)");
+  const R = Math.max(5, Math.round(r));
+
+  // drop shadow
+  drawPixelRect(xx - R - 2, yy - R - 1, R * 2 + 4, R * 2 + 3, "rgba(0,0,0,0.28)");
+
+  // outer rim (approx circle)
+  const rim = "#E0B93E";
+  const fill = "#FFD24D";
+  for (let dy = -R; dy <= R; dy++) {
+    const w = Math.floor(Math.sqrt(Math.max(0, R * R - dy * dy)));
+    drawPixelRect(xx - w, yy + dy, w * 2 + 1, 1, rim);
+  }
+
+  // inner fill
+  const Ri = Math.max(2, R - 2);
+  for (let dy = -Ri; dy <= Ri; dy++) {
+    const w = Math.floor(Math.sqrt(Math.max(0, Ri * Ri - dy * dy)));
+    drawPixelRect(xx - w, yy + dy, w * 2 + 1, 1, fill);
+  }
+
+  // small stamp + shine
+  drawPixelRect(xx - 2, yy - 1, 4, 2, "rgba(0,0,0,0.18)");
+  drawPixelRect(xx - Ri + 1, yy - Ri + 2, 3, 2, "rgba(255,255,255,0.28)");
 }
 
 function drawPoster(x, y, w, h, title, sub, accent = "#FFD24D") {
@@ -2556,6 +2633,30 @@ function drawLevel2() {
     drawPixelRect(fx, fy, 2, 2, "rgba(255,255,255,0.55)");
   }
 
+  // Christmas decorations (garland + lights)
+  const garY2 = 42;
+  drawPixelRect(0, garY2, VIEW.gw, 2, "rgba(46,227,95,0.45)");
+  for (let i = 0; i < 30; i++) {
+    const x = i * (VIEW.gw / 29);
+    const wob = Math.round(Math.sin(state.t * 1.6 + i * 0.7) * 2);
+    // hanging bulbs
+    const on = (Math.sin(state.t * 3.2 + i * 1.1) > 0.25);
+    drawPixelRect(x - 1, garY2 + 6 + wob, 3, 3, on ? "#FFD24D" : "rgba(255,255,255,0.20)");
+    drawPixelRect(x - 1, garY2 + 10 + wob, 3, 3, "rgba(255,90,0,0.55)");
+    // little strand
+    drawPixelRect(x, garY2 + wob, 1, 6, "rgba(46,227,95,0.35)");
+  }
+  // simple wreaths on a few lockers
+  for (let i = 0; i < 3; i++) {
+    const wx = 140 + i * 280 - ((L2.camX * 0.45) % 560);
+    const wy = floorY - 120;
+    drawPixelRect(wx - 10, wy - 10, 20, 20, "rgba(0,0,0,0.18)");
+    drawPixelRect(wx - 9, wy - 9, 18, 18, "rgba(46,227,95,0.55)");
+    drawPixelRect(wx - 5, wy - 5, 10, 10, "rgba(0,0,0,0.22)");
+    drawPixelRect(wx - 2, wy - 9, 4, 4, "rgba(255,90,0,0.80)");
+  }
+
+
   // Posters
   const posterCam = L2.camX * 0.70;
   const startN = Math.floor((posterCam - 260) / 260);
@@ -2619,7 +2720,7 @@ function drawLevel2() {
     if (!f.alive) continue;
     const fx = f.x - L2.camX;
     if (fx < -60 || fx > VIEW.gw + 60) continue;
-    drawFoodItem(fx, f.y);
+    drawFoodItem(fx, f.y, f.kind);
   }
 
   // NPCs
@@ -2644,6 +2745,10 @@ function drawLevel2() {
   ctx.font = "800 13px system-ui, Arial";
   ctx.fillText(`🥫 Carrying: ${L2.carryFood}`, 16, 106);
   ctx.fillText(`Delivered: ${L2.deliveredFood}`, 16, 126);
+
+  const items = L2.carryFood + L2.carryTech;
+  const jm = clamp(1 - items * 0.25, 0, 1);
+  ctx.fillText(`Hands full: ${items} • Jump: ${Math.round(jm * 100)}%`, 16, 146);
 
   ctx.textAlign = "right";
   ctx.fillStyle = "rgba(255,255,255,0.95)";
@@ -2740,9 +2845,15 @@ function drawLevel2() {
 
     if (state.screen === "level2") {
       if ((e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") && player.onGround && !L2.done) {
-        player.vy = -PHYS.jumpV;
-        player.onGround = false;
-        SFX.jump();
+        const items = (L2.carryFood + L2.carryTech);
+        const jm = clamp(1 - items * 0.25, 0, 1);
+        if (L2.noJumpT <= 0 && jm > 0.01) {
+          player.vy = -PHYS.jumpV * jm;
+          player.onGround = false;
+          SFX.jump();
+        } else {
+          SFX.tick();
+        }
       }
 
       if (e.key === "Escape") {
@@ -2837,7 +2948,17 @@ function drawLevel2() {
 
     if (state.screen === "level2") {
       if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
-        if (player.onGround && !L2.done) { player.vy = -PHYS.jumpV; player.onGround = false; SFX.jump(); }
+        if (player.onGround && !L2.done) {
+          const items = (L2.carryFood + L2.carryTech);
+          const jm = clamp(1 - items * 0.25, 0, 1);
+          if (L2.noJumpT <= 0 && jm > 0.01) {
+            player.vy = -PHYS.jumpV * jm;
+            player.onGround = false;
+            SFX.jump();
+          } else {
+            SFX.tick();
+          }
+        }
         clearTouch();
       } else {
         setTouchFromGX(gx);
