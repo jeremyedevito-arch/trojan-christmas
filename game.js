@@ -3140,7 +3140,7 @@ function drawLevel3() {
   }
 
   // Player
-  drawPlayer();
+  drawChibiPlayer();
 
   // FX
   drawConfetti();
