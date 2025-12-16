@@ -324,9 +324,6 @@
     phaseStartT: 0,
     levelDone: false,
 
-    // When Level 1 completes, we briefly show the end screen and then auto-advance.
-    doneT: 0,
-
     bannerT: 0,
     bannerText: "",
 
@@ -353,6 +350,15 @@
     lateIcons: [],
     nextLateT: 1.2,
 
+
+    // NEW: Shelley Gingras speed boost (Phase A/B only)
+    shelley: { x: 260, dir: 1, speed: 36, cd: 0 },
+    boostT: 0,
+    boostLevel: 1,
+
+    // NEW: March Hare (Phase A only)
+    hare: { active: false, t: 3.5, x: 0, y: 0, vx: 0, seed: 0 },
+
     michelle: { active: false, x: 0, t: 0 },
     nextMichelleT: 6.0,
     posers: [],
@@ -375,7 +381,6 @@
     L1.timeInLevel = 0;
     L1.phaseStartT = 0;
     L1.levelDone = false;
-    L1.doneT = 0;
 
     L1.bannerT = 0;
     L1.bannerText = "";
@@ -401,6 +406,15 @@
     L1.jamie = { x: 210, dir: 1, speed: 24, clipT: 0 };
     L1.lateIcons = [];
     L1.nextLateT = 1.2;
+
+
+    // Shelley boost
+    L1.shelley = { x: 260, dir: 1, speed: 36, cd: 0 };
+    L1.boostT = 0;
+    L1.boostLevel = 1;
+
+    // March Hare
+    L1.hare = { active: false, t: 3.5, x: 0, y: 0, vx: 0, seed: Math.random() * 10 };
 
     L1.michelle = { active: false, x: 0, t: 0 };
     L1.nextMichelleT = 6.0;
@@ -614,24 +628,87 @@
     });
   }
 
-  function updateNPCs(dt) {
-    const floorY = VIEW.gh * 0.78;
+  
+function updateNPCs(dt) {
+  const floorY = VIEW.gh * 0.78;
 
+  // ---------------- Shelley Gingras (Phase A/B speed boost) ----------------
+  if (L1.phase === "carrot" || L1.phase === "shot") {
+    const sh = L1.shelley;
+    sh.x += sh.dir * sh.speed * dt;
+    if (sh.x < 140) { sh.x = 140; sh.dir = 1; }
+    if (sh.x > VIEW.gw * 0.52) { sh.x = VIEW.gw * 0.52; sh.dir = -1; }
+    if (sh.cd > 0) sh.cd -= dt;
+
+    const shY = floorY - 44;
+    if (sh.cd <= 0 && rectsOverlap(player.x, player.y, player.w, player.h, sh.x, shY, 16, 44)) {
+      // If you hit Shelley while boosted, you upgrade (max triple)
+      if (L1.boostLevel < 2) L1.boostLevel = 2;
+      else if (L1.boostLevel < 3) L1.boostLevel = 3;
+
+      L1.boostT = 5.0;
+      sh.cd = 0.65;
+
+      SFX.start();
+      spawnSparkles(sh.x + 8, shY + 14, 14);
+    }
+  }
+
+  // ---------------- March Hare (Phase A only) ----------------
+  if (L1.phase === "carrot") {
+    const h = L1.hare;
+
+    if (!h.active) {
+      h.t -= dt;
+      if (h.t <= 0) {
+        h.active = true;
+        h.seed = Math.random() * 10;
+        h.x = L1.camX + VIEW.gw + 80 + Math.random() * 220;
+        h.y = floorY - 36;
+        h.vx = -(360 + Math.random() * 180); // fast + elusive
+      }
+    } else {
+      h.x += h.vx * dt;
+
+      const sx = h.x - L1.camX;
+      const visible = (Math.sin(state.t * 18 + h.seed) > -0.15); // flicker
+
+      // Only "catch" when visible to keep the appear/disappear feel fair
+      if (visible && rectsOverlap(player.x, player.y, player.w, player.h, sx, h.y, 22, 16)) {
+        h.active = false;
+        h.t = 7 + Math.random() * 6; // gone for a bit
+        L1.score += 300;
+        SFX.dingding();
+        spawnSparkles(player.x + player.w * 0.5, player.y + 10, 18);
+        spawnConfettiBurst();
+      }
+
+      if (sx < -140) {
+        h.active = false;
+        h.t = 4 + Math.random() * 4;
+      }
+    }
+  } else {
+    // keep it from lingering into other phases
+    if (L1.hare) L1.hare.active = false;
+  }
+
+  // ---------------- Jamie + late slips (Phase 3 only) ----------------
+  if (L1.phase === "colouring") {
     const j = L1.jamie;
     j.x += j.dir * j.speed * dt;
     if (j.x < 120) { j.x = 120; j.dir = 1; }
     if (j.x > VIEW.gw * 0.50) { j.x = VIEW.gw * 0.50; j.dir = -1; }
     if (j.clipT > 0) j.clipT -= dt;
 
+    // Late slips: ONLY spawn/collect during colouring, capped at 10
     L1.nextLateT -= dt;
     if (L1.nextLateT <= 0) {
-      const inColour = (L1.phase === "colouring");
-      const capReached = inColour && (L1.colouring.lateSpawned >= L1.colouring.lateCap);
-
+      const capReached = (L1.colouring.lateSpawned >= L1.colouring.lateCap);
       if (!capReached) {
-        L1.nextLateT = inColour ? (0.9 + Math.random() * 0.9) : (1.3 + Math.random() * 1.5);
+        L1.nextLateT = 0.9 + Math.random() * 0.9;
         spawnLateIcon();
-        if (inColour) L1.colouring.lateSpawned += 1;
+        L1.colouring.lateSpawned += 1;
       } else {
         L1.nextLateT = 9999;
       }
@@ -652,63 +729,66 @@
       if (ic.t > 7) ic.alive = false;
     }
     L1.lateIcons = L1.lateIcons.filter(a => a.alive);
+  }
 
-    L1.nextMichelleT -= dt;
-    if (L1.nextMichelleT <= 0 && !L1.michelle.active) {
-      L1.nextMichelleT = 8 + Math.random() * 10;
-      L1.michelle.active = true;
-      L1.michelle.t = 0;
-      L1.michelle.x = VIEW.gw * (0.55 + Math.random() * 0.35);
+  // ---------------- Michelle + posers (unchanged) ----------------
+  L1.nextMichelleT -= dt;
+  if (L1.nextMichelleT <= 0 && !L1.michelle.active) {
+    L1.nextMichelleT = 8 + Math.random() * 10;
+    L1.michelle.active = true;
+    L1.michelle.t = 0;
+    L1.michelle.x = VIEW.gw * (0.55 + Math.random() * 0.35);
 
-      L1.posers = [];
-      const n = 2 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < n; i++) {
-        L1.posers.push({
-          x: L1.michelle.x - 70 - i * 26,
-          y: floorY - 30,
-          t: 0,
-          alive: true,
-        });
-      }
-
-      FX.flashT = 0.12;
-      SFX.shutter();
-    }
-
-    if (L1.michelle.active) {
-      L1.michelle.t += dt;
-      if (L1.michelle.t > 1.2) L1.michelle.active = false;
-    }
-
-    for (const p of L1.posers) {
-      p.t += dt;
-      if (p.t > 1.0) p.alive = false;
-    }
-    L1.posers = L1.posers.filter(p => p.alive);
-
-    L1.nextWalkerT -= dt;
-    if (L1.nextWalkerT <= 0 && L1.phase !== "shot") {
-      L1.nextWalkerT = 0.8 + Math.random() * 1.6;
-      L1.walkers.push({
-        x: VIEW.gw + 20,
-        y: floorY - (34 + Math.random() * 10),
-        vx: -(80 + Math.random() * 90),
+    L1.posers = [];
+    const n = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      L1.posers.push({
+        x: L1.michelle.x - 70 - i * 26,
+        y: floorY - 30,
         t: 0,
         alive: true,
       });
     }
 
-    for (const w of L1.walkers) {
-      w.t += dt;
-      w.x += w.vx * dt;
-      if (w.x < -40 || w.t > 5) w.alive = false;
-    }
-    L1.walkers = L1.walkers.filter(w => w.alive);
-
-    if (FX.flashT > 0) FX.flashT -= dt;
+    FX.flashT = 0.12;
+    SFX.shutter();
   }
 
-  function updateFX(dt) {
+  if (L1.michelle.active) {
+    L1.michelle.t += dt;
+    if (L1.michelle.t > 1.2) L1.michelle.active = false;
+  }
+
+  for (const p of L1.posers) {
+    p.t += dt;
+    if (p.t > 1.0) p.alive = false;
+  }
+  L1.posers = L1.posers.filter(p => p.alive);
+
+  // ---------------- Walkers (unchanged, skip during shot) ----------------
+  L1.nextWalkerT -= dt;
+  if (L1.nextWalkerT <= 0 && L1.phase !== "shot") {
+    L1.nextWalkerT = 0.8 + Math.random() * 1.6;
+    L1.walkers.push({
+      x: VIEW.gw + 20,
+      y: floorY - (34 + Math.random() * 10),
+      vx: -(80 + Math.random() * 90),
+      t: 0,
+      alive: true,
+    });
+  }
+
+  for (const w of L1.walkers) {
+    w.t += dt;
+    w.x += w.vx * dt;
+    if (w.x < -40 || w.t > 5) w.alive = false;
+  }
+  L1.walkers = L1.walkers.filter(w => w.alive);
+
+  if (FX.flashT > 0) FX.flashT -= dt;
+}
+
+function updateFX(dt) {
     for (const p of FX.confetti) {
       p.t += dt;
       p.vy += p.g * dt;
@@ -732,21 +812,6 @@
     const floorY = VIEW.gh * 0.78;
     L1.timeInLevel += dt;
 
-    // If Level 1 is complete, freeze gameplay and auto-advance to Level 2.
-    // (Players can still press Esc to go back to character select.)
-    if (L1.levelDone) {
-      L1.doneT += dt;
-      if (L1.doneT >= 1.0) {
-        resetLevel2();
-        state.screen = "level2";
-        SFX.start();
-      }
-      // Keep end-screen FX alive.
-      updateFX(dt);
-      if (L1.bannerT > 0) L1.bannerT -= dt;
-      return;
-    }
-
     if (L1.phase === "carrot" && L1.timeInLevel > 40) initShotPhase();
     if (L1.phase === "shot" && (L1.timeInLevel - L1.phaseStartT) > 30) initColouringPhase();
 
@@ -757,9 +822,16 @@
     const left = touch.left || keys.has("ArrowLeft") || keys.has("a") || keys.has("A");
     const right = touch.right || keys.has("ArrowRight") || keys.has("d") || keys.has("D");
 
+    if (L1.boostT > 0) {
+      L1.boostT -= dt;
+      if (L1.boostT <= 0) { L1.boostT = 0; L1.boostLevel = 1; }
+    }
+
+    const move = PHYS.moveSpeed * (L1.boostLevel || 1);
+
     player.vx = 0;
-    if (left) player.vx -= PHYS.moveSpeed;
-    if (right) player.vx += PHYS.moveSpeed;
+    if (left) player.vx -= move;
+    if (right) player.vx += move;
 
     if (player.vx < -5) player.facing = -1;
     else if (player.vx > 5) player.facing = 1;
@@ -1194,6 +1266,89 @@
     }
   }
 
+
+function drawShelley() {
+  const floorY = VIEW.gh * 0.78;
+  const x = Math.round(L1.shelley.x);
+  const y = Math.round(floorY - 44);
+
+  // shadow
+  drawPixelRect(x + 3, y + 42, 10, 3, "rgba(0,0,0,0.25)");
+
+  // body (navy-ish blazer), skirt/pants, head
+  drawPixelRect(x, y + 18, 16, 18, "#1A2E4A");
+  drawPixelRect(x, y + 34, 16, 8, "#2B2B2B");
+  drawPixelRect(x, y, 16, 16, "#FFD2B5");
+  drawPixelRect(x, y, 16, 6, "#6B3B2A"); // hair
+
+  // little IB pin
+  drawPixelRect(x + 12, y + 24, 2, 2, "#FFD24D");
+
+  // boost aura when active
+  if (L1.boostLevel > 1) {
+    const a = 0.12 + 0.06 * Math.sin(state.t * 10);
+    drawPixelRect(x - 2, y - 2, 20, 48, `rgba(255,210,77,${a})`);
+  }
+}
+
+function drawMissingPosters() {
+  if (L1.phase !== "carrot") return;
+  const floorY = VIEW.gh * 0.78;
+
+  // Parallax offset so they "scroll" with the hallway
+  const period = 320;
+  const off = (L1.camX * 0.45) % period;
+
+  for (let i = 0; i < 4; i++) {
+    const x = Math.round(90 + i * period - off);
+    const y = Math.round(floorY - 120);
+
+    // poster sheet
+    drawPixelRect(x, y, 84, 54, "rgba(255,255,255,0.14)");
+    drawPixelRect(x + 2, y + 2, 80, 50, "rgba(0,0,0,0.35)");
+
+    // header strip
+    drawPixelRect(x + 2, y + 2, 80, 10, "rgba(128,0,32,0.55)");
+    ctx.fillStyle = "rgba(255,255,255,0.90)";
+    ctx.font = "900 9px system-ui, Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("MISSING:", x + 6, y + 10);
+
+    // bunny silhouette
+    drawPixelRect(x + 10, y + 20, 10, 14, "rgba(255,255,255,0.18)");
+    drawPixelRect(x + 8, y + 18, 4, 6, "rgba(255,255,255,0.18)");
+    drawPixelRect(x + 16, y + 18, 4, 6, "rgba(255,255,255,0.18)");
+
+    // "March Hare" text
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.font = "800 9px system-ui, Arial";
+    ctx.fillText("March Hare", x + 28, y + 30);
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.font = "700 8px system-ui, Arial";
+    ctx.fillText("Reward: 300", x + 28, y + 42);
+  }
+}
+
+function drawMarchHare() {
+  if (L1.phase !== "carrot") return;
+  const h = L1.hare;
+  if (!h || !h.active) return;
+
+  const sx = Math.round(h.x - L1.camX);
+  const y = Math.round(h.y);
+
+  const visible = (Math.sin(state.t * 18 + h.seed) > -0.15);
+  if (!visible) return;
+
+  // small fast hare sprite
+  drawPixelRect(sx + 2, y + 12, 14, 2, "rgba(0,0,0,0.20)");
+  drawPixelRect(sx + 4, y + 2, 4, 8, "rgba(255,255,255,0.80)"); // ear
+  drawPixelRect(sx + 9, y + 1, 4, 9, "rgba(255,255,255,0.80)"); // ear
+  drawPixelRect(sx + 4, y + 8, 14, 8, "rgba(255,255,255,0.78)"); // body
+  drawPixelRect(sx + 15, y + 10, 4, 4, "rgba(255,255,255,0.78)"); // tail
+  drawPixelRect(sx + 6, y + 11, 2, 2, "rgba(0,0,0,0.35)"); // eye
+}
+
   function drawMichelle() {
     if (!L1.michelle.active) return;
     const floorY = VIEW.gh * 0.78;
@@ -1421,9 +1576,17 @@
       ctx.fillText("Christmas Colouring — fill every square!", VIEW.gw / 2, VIEW.gh * 0.18);
     }
 
-    // NPCs foreground
-    drawLateIcons();
-    drawJamie();
+    // NPCs foreground (phase-specific)
+    if (L1.phase === "carrot") {
+      drawMissingPosters();
+      drawMarchHare();
+      drawShelley();
+    } else if (L1.phase === "shot") {
+      drawShelley();
+    } else if (L1.phase === "colouring") {
+      drawLateIcons();
+      drawJamie();
+    }
     drawMichelle();
 
     // player + FX
@@ -1473,12 +1636,11 @@
       ctx.fillText("LEVEL 1 COMPLETE!", VIEW.gw / 2, VIEW.gh * 0.42);
 
       ctx.font = "800 16px system-ui, Arial";
-      ctx.fillText("Nice work — next up: Trojan Trek.", VIEW.gw / 2, VIEW.gh * 0.50);
+      ctx.fillText("Nice work — more levels coming soon.", VIEW.gw / 2, VIEW.gh * 0.50);
 
       ctx.font = "700 13px system-ui, Arial";
       ctx.fillStyle = "rgba(255,255,255,0.75)";
-      ctx.fillText("Starting Level 2… (or press Enter/Space / tap center)", VIEW.gw / 2, VIEW.gh * 0.58);
-      ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.62);
+      ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.58);
     }
   }
 
