@@ -2070,7 +2070,6 @@ function updateLevel3(dt) {
   }
 
   // Michelle pop-in photos (same vibe as Level 1)
- (same vibe as Level 1)
   L3.nextMichelleT -= dt;
   if (L3.nextMichelleT <= 0 && !L3.michelle.active) {
     L3.nextMichelleT = 6 + Math.random() * 8;
