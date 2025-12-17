@@ -161,6 +161,11 @@
       beep({ type: "triangle", f0: 1040, f1: 1480, dur: 0.10, gain: 0.07 });
       setTimeout(() => beep({ type: "triangle", f0: 1240, f1: 1760, dur: 0.10, gain: 0.07 }), 120);
     },
+    jingle: () => {
+      // light seasonal jingle (bells-ish)
+      beep({ type: "triangle", f0: 880, f1: 1320, dur: 0.09, gain: 0.05 });
+      setTimeout(() => beep({ type: "triangle", f0: 990, f1: 1480, dur: 0.09, gain: 0.05 }), 110);
+    },
   };
 
   function ensureAmbience() {
@@ -1772,20 +1777,36 @@ function updateLevel2(dt) {
   updateFX(dt);
 }
   
-// ✅ LEVEL 3 — Late Slip Blizzard (step 1: space + Jamie + Michelle)
+// ✅ LEVEL 3 — Late Slip Blizzard
 const L3 = {
   camX: 0,
   speed: 240,
   score: 0,
+
+  // one phase, 60 seconds
   timeT: 60,
+
+  // gameplay flags
   done: false,
+  endT: 0,           // small timing for end flash/message
+  showEndMsg: false, // message after final flash
 
   jamie: { x: 220, dir: 1, speed: 26, clipT: 0 },
+
+  // late slips
   lateIcons: [],
   nextLateT: 0.22, // fast and furious
 
+  // Michelle photos
   michelle: { active: false, x: 0, t: 0 },
   nextMichelleT: 4.5,
+
+  // Carolers (obstacle swarm)
+  carolers: [],
+  carolNotePuffs: [],
+  caughtT: 0,         // remaining slow/no-jump time
+  caughtBy: -1,
+  caughtFxT: 0,
 };
 
 function resetLevel3() {
@@ -1800,6 +1821,28 @@ function resetLevel3() {
 
   L3.michelle = { active: false, x: 0, t: 0 };
   L3.nextMichelleT = 4.5;
+
+  L3.endT = 0;
+  L3.showEndMsg = false;
+
+  // Carolers (about a dozen, smaller)
+  L3.carolers = [];
+  for (let i = 0; i < 12; i++) {
+    const base = 420 + i * 240 + Math.random() * 120;
+    L3.carolers.push({
+      id: i,
+      wx: base,                 // world x (moves with hallway)
+      lane: (i % 3),            // 0..2 (slight vertical variety)
+      paceDir: Math.random() < 0.5 ? -1 : 1,
+      paceT: Math.random() * 2.0,
+      speed: 16 + Math.random() * 12,
+      active: true,
+    });
+  }
+  L3.carolNotePuffs = [];
+  L3.caughtT = 0;
+  L3.caughtBy = -1;
+  L3.caughtFxT = 0;
 
   // reset player
   player.x = 140;
@@ -1817,7 +1860,7 @@ function spawnLateIconL3(floorY) {
   L3.lateIcons.push({
     x: 80 + Math.random() * (VIEW.gw - 160),
     y: -20 - Math.random() * 60,
-    vy: 260 + Math.random() * 140,
+    vy: 130 + Math.random() * 70,
     t: 0,
     alive: true,
   });
@@ -1826,6 +1869,13 @@ function spawnLateIconL3(floorY) {
 function updateLevel3(dt) {
   const floorY = VIEW.gh * 0.78;
   if (L3.done) {
+    L3.endT += dt;
+    if (L3.endT > 0.35) L3.showEndMsg = true;
+    // keep Michelle visible briefly
+    if (L3.michelle.active) {
+      L3.michelle.t += dt;
+      if (L3.michelle.t > 1.2) L3.michelle.active = false;
+    }
     updateFX(dt);
     return;
   }
@@ -1835,8 +1885,18 @@ function updateLevel3(dt) {
   if (L3.timeT <= 0) {
     L3.timeT = 0;
     L3.done = true;
+    L3.endT = 0;
+    L3.showEndMsg = false;
+
+    // Final Michelle flash + celebration
+    L3.michelle.active = true;
+    L3.michelle.t = 0;
+    L3.michelle.x = VIEW.gw * 0.60;
+    FX.flashT = 0.25;
+    SFX.shutter();
     SFX.dingding();
     spawnConfettiBurst();
+
     updateFX(dt);
     return;
   }
@@ -1849,7 +1909,8 @@ function updateLevel3(dt) {
   if (left) move -= 1;
   if (right) move += 1;
 
-  player.vx = move * PHYS.moveSpeed;
+  const slowMul = (L3.caughtT > 0) ? 0.45 : 1;
+  player.vx = move * PHYS.moveSpeed * slowMul;
   if (Math.abs(player.vx) > 1) player.facing = Math.sign(player.vx);
 
   // auto-scroll camera
@@ -1902,6 +1963,83 @@ function updateLevel3(dt) {
   }
   L3.lateIcons = L3.lateIcons.filter(a => a.alive);
 
+  // Carolers swarm: walk the halls; if you get too close they slow + no-jump for 5s and follow you
+  if (L3.caughtT > 0) {
+    L3.caughtT -= dt;
+    L3.caughtFxT = Math.max(0, L3.caughtFxT - dt);
+
+    // keep the "caught" caroler walking alongside you
+    const idx = L3.caughtBy;
+    if (idx >= 0 && L3.carolers[idx]) {
+      L3.carolers[idx].wx = L3.camX + player.x + 46 + Math.sin(state.t * 8) * 6;
+    }
+
+    // music note puffs
+    if ((L3._noteSpawnT = (L3._noteSpawnT || 0) - dt) <= 0) {
+      L3._noteSpawnT = 0.14;
+      const nx = player.x + player.w + 10;
+      const ny = player.y + 10 + Math.random() * 14;
+      L3.carolNotePuffs.push({
+        x: nx,
+        y: ny,
+        vx: 24 + Math.random() * 18,
+        vy: -22 - Math.random() * 16,
+        t: 0,
+        alive: true,
+      });
+    }
+  } else {
+    L3.caughtBy = -1;
+    L3._noteSpawnT = 0;
+  }
+
+  // update note puffs
+  for (const n of L3.carolNotePuffs) {
+    n.t += dt;
+    n.x += n.vx * dt;
+    n.y += n.vy * dt;
+    if (n.t > 1.0) n.alive = false;
+  }
+  L3.carolNotePuffs = L3.carolNotePuffs.filter(n => n.alive);
+
+  // update carolers world positions + recycle
+  for (const c of L3.carolers) {
+    if (!c.active) continue;
+
+    // if not the one currently "caught", pace a little in world space
+    if (c.id !== L3.caughtBy) {
+      c.paceT += dt;
+      if (c.paceT > 1.8 + Math.random() * 0.6) {
+        c.paceT = 0;
+        c.paceDir *= -1;
+      }
+      c.wx += c.paceDir * c.speed * dt;
+    }
+
+    const sx = c.wx - L3.camX;
+    // recycle ahead when it drifts off left
+    if (sx < -140) {
+      c.wx = L3.camX + VIEW.gw + 220 + Math.random() * 420;
+      c.lane = Math.floor(Math.random() * 3);
+      c.speed = 16 + Math.random() * 12;
+      c.paceDir = Math.random() < 0.5 ? -1 : 1;
+      c.paceT = Math.random() * 1.5;
+    }
+
+    // proximity trigger (only if not currently caught)
+    if (L3.caughtT <= 0) {
+      const cy = floorY - 40 - c.lane * 6;
+      if (Math.abs((sx + 8) - (player.x + player.w * 0.5)) < 42 && Math.abs((cy + 12) - (player.y + player.h * 0.5)) < 34) {
+        L3.caughtT = 5.0;
+        L3.caughtBy = c.id;
+        L3.caughtFxT = 5.0;
+        FX.flashT = 0.06; // tiny "sparkle" feel
+        SFX.jingle();
+      }
+    }
+  }
+
+
   // Michelle pop-in photos (same vibe as Level 1)
   L3.nextMichelleT -= dt;
   if (L3.nextMichelleT <= 0 && !L3.michelle.active) {
@@ -1947,6 +2085,62 @@ function drawLateIconsL3() {
   }
 }
 
+
+function drawMusicNotesL3() {
+  if (L3.caughtFxT <= 0) return;
+  for (const n of L3.carolNotePuffs) {
+    const x = Math.round(n.x);
+    const y = Math.round(n.y);
+    const a = Math.max(0, 1 - n.t / 1.0);
+    drawPixelRect(x, y, 4, 4, `rgba(255,255,255,${0.55 * a})`);
+    drawPixelRect(x + 3, y - 3, 2, 6, `rgba(255,255,255,${0.55 * a})`);
+    drawPixelRect(x + 2, y - 6, 4, 2, `rgba(255,255,255,${0.55 * a})`);
+  }
+}
+
+function drawCarolerL3(x, y) {
+  // 50% size caroler with winter gear
+  const s = 0.5;
+  const ox = Math.round(x);
+  const oy = Math.round(y);
+
+  // shadow
+  drawPixelRect(ox + 3, oy + 26, 10, 2, "rgba(0,0,0,0.22)");
+
+  // hat
+  drawPixelRect(ox + 4, oy + 0, 8, 3, "#E64545");
+  drawPixelRect(ox + 3, oy + 3, 10, 2, "#C92E2E");
+
+  // head
+  drawPixelRect(ox + 4, oy + 5, 8, 7, "#FFD2B5");
+
+  // scarf
+  drawPixelRect(ox + 3, oy + 12, 10, 3, "#2FE35F");
+  drawPixelRect(ox + 8, oy + 15, 3, 4, "#2FE35F");
+
+  // coat
+  drawPixelRect(ox + 3, oy + 15, 10, 9, "rgba(123,214,255,0.60)");
+  drawPixelRect(ox + 7, oy + 15, 1, 9, "rgba(0,0,0,0.22)");
+
+  // mitts
+  drawPixelRect(ox + 1, oy + 18, 2, 3, "#FFD24D");
+  drawPixelRect(ox + 13, oy + 18, 2, 3, "#FFD24D");
+
+  // boots
+  drawPixelRect(ox + 4, oy + 24, 3, 2, "rgba(0,0,0,0.55)");
+  drawPixelRect(ox + 9, oy + 24, 3, 2, "rgba(0,0,0,0.55)");
+}
+
+function drawCarolersL3() {
+  const floorY = VIEW.gh * 0.78;
+  for (const c of L3.carolers) {
+    const sx = c.wx - L3.camX;
+    if (sx < -80 || sx > VIEW.gw + 80) continue;
+    const y = floorY - 34 - c.lane * 6;
+    drawCarolerL3(sx, y);
+  }
+}
+
 function drawMichelleL3() {
   if (!L3.michelle.active) return;
   const floorY = VIEW.gh * 0.78;
@@ -1973,6 +2167,8 @@ function drawLevel3() {
   // Jamie + late slips + Michelle
   drawJamieL3();
   drawLateIconsL3();
+  drawCarolersL3();
+  drawMusicNotesL3();
   drawMichelleL3();
 
   drawChibiPlayer();
@@ -1996,17 +2192,29 @@ function drawLevel3() {
     ctx.fillStyle = "rgba(0,0,0,0.60)";
     ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
 
-    ctx.fillStyle = "rgba(255,255,255,0.95)";
-    ctx.textAlign = "center";
-    ctx.font = "900 28px system-ui, Arial";
-    ctx.fillText("ASSIGNMENTS COLLECTED.", VIEW.gw / 2, VIEW.gh * 0.44);
+    // After the final flash, show the message + prompt
+    if (L3.showEndMsg) {
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.textAlign = "center";
+      ctx.font = "900 26px system-ui, Arial";
+      ctx.fillText("ASSIGNMENTS COLLECTED; HOLIDAY EARNED", VIEW.gw / 2, VIEW.gh * 0.44);
 
-    ctx.font = "800 16px system-ui, Arial";
-    ctx.fillText(`Final Score: ${L3.score}`, VIEW.gw / 2, VIEW.gh * 0.52);
+      ctx.font = "800 16px system-ui, Arial";
+      ctx.fillText(`Final Score: ${L3.score}`, VIEW.gw / 2, VIEW.gh * 0.52);
 
-    ctx.font = "700 12px system-ui, Arial";
-    ctx.fillStyle = "rgba(255,255,255,0.70)";
-    ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.60);
+      ctx.font = "800 14px system-ui, Arial";
+      ctx.fillStyle = "rgba(255,255,255,0.90)";
+      ctx.fillText("Press Enter to view Credits", VIEW.gw / 2, VIEW.gh * 0.62);
+
+      ctx.font = "700 12px system-ui, Arial";
+      ctx.fillStyle = "rgba(255,255,255,0.70)";
+      ctx.fillText("(Tap/Click center on mobile)", VIEW.gw / 2, VIEW.gh * 0.66);
+    } else {
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.textAlign = "center";
+      ctx.font = "900 18px system-ui, Arial";
+      ctx.fillText("📸", VIEW.gw / 2, VIEW.gh * 0.44);
+    }
   }
 }
 
@@ -2639,6 +2847,33 @@ function drawCoin(x, y, r) {
   drawPixelRect(xx - Ri + 1, yy - Ri + 2, 3, 2, "rgba(255,255,255,0.28)");
 }
 
+function drawCredits() {
+  drawPixelRect(0, 0, VIEW.gw, VIEW.gh, "#061425");
+  drawPixelRect(0, 0, VIEW.gw, 34, "rgba(255,214,120,0.10)");
+
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.textAlign = "center";
+  ctx.font = "900 30px system-ui, Arial";
+  ctx.fillText("CREDITS", VIEW.gw / 2, VIEW.gh * 0.20);
+
+  ctx.font = "800 16px system-ui, Arial";
+  ctx.fillStyle = "rgba(255,255,255,0.90)";
+  ctx.fillText("HTHS Holiday Hallway Game", VIEW.gw / 2, VIEW.gh * 0.28);
+
+  ctx.font = "700 14px system-ui, Arial";
+  ctx.fillStyle = "rgba(255,255,255,0.80)";
+  ctx.fillText("Created with Trojan spirit ✨", VIEW.gw / 2, VIEW.gh * 0.34);
+
+  ctx.font = "800 16px system-ui, Arial";
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.fillText(`Final Score: ${L3.score}`, VIEW.gw / 2, VIEW.gh * 0.46);
+
+  ctx.font = "700 13px system-ui, Arial";
+  ctx.fillStyle = "rgba(255,255,255,0.70)";
+  ctx.fillText("Press Enter to return to the Title Screen", VIEW.gw / 2, VIEW.gh * 0.62);
+  ctx.fillText("(Tap/Click center on mobile)", VIEW.gw / 2, VIEW.gh * 0.66);
+}
+
 function drawPoster(x, y, w, h, title, sub, accent = "#FFD24D") {
   drawPixelRect(x, y, w, h, "rgba(255,255,255,0.10)");
   drawPixelRect(x + 2, y + 2, w - 4, h - 4, "rgba(0,0,0,0.34)");
@@ -3042,6 +3277,13 @@ function drawLevel2() {
     ensureAudio();
     keys.add(e.key);
 
+    // Credits: return to title
+    if (state.screen === "credits" && (e.key === "Enter" || e.key === " ")) {
+      state.screen = "title";
+      SFX.start();
+      return;
+    }
+
     if (state.screen === "title" && (e.key === "Enter" || e.key === " ")) {
       state.screen = "select";
       SFX.start();
@@ -3125,10 +3367,16 @@ if (e.key === "Escape") {
 
   
 if (state.screen === "level3") {
-  if ((e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") && player.onGround && !L3.done) {
+  if ((e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") && player.onGround && !L3.done && L3.caughtT <= 0) {
     player.vy = -PHYS.jumpV;
     player.onGround = false;
     SFX.jump();
+  }
+
+  // Proceed to Credits after Level 3 ends
+  if (L3.done && (e.key === "Enter" || e.key === " ")) {
+    state.screen = "credits";
+    SFX.start();
   }
 
   if (e.key === "Escape") {
@@ -3248,7 +3496,13 @@ if (L2.done && gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
 
 if (state.screen === "level3") {
   if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
-    if (player.onGround && !L3.done) { player.vy = -PHYS.jumpV; player.onGround = false; SFX.jump(); }
+    if (L3.done) {
+      state.screen = "credits";
+      SFX.start();
+      clearTouch();
+      return;
+    }
+    if (player.onGround && !L3.done && L3.caughtT <= 0) { player.vy = -PHYS.jumpV; player.onGround = false; SFX.jump(); }
     clearTouch();
   } else {
     setTouchFromGX(gx);
@@ -3304,6 +3558,9 @@ if (state.screen === "level3") {
     else if (state.screen === "level3") {
       updateLevel3(dt);
       drawLevel3();
+    }
+    else if (state.screen === "credits") {
+      drawCredits();
     }
 
     ctx.restore();
