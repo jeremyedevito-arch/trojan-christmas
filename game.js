@@ -2268,12 +2268,6 @@ function drawLevel3() {
       ctx.fillText("📸", VIEW.gw / 2, VIEW.gh * 0.44);
     }
   }
-
-  // Screen flash overlay (used by Michelle/Gary/etc.)
-  if (FX.flashT > 0) {
-    ctx.fillStyle = `rgba(255,255,255,${Math.min(1, FX.flashT * 8)})`;
-    ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
-  }
 }
 
 // -------------------- Draw helpers --------------------
@@ -3328,12 +3322,6 @@ function drawLevel2() {
     ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.75);
   }
-
-  // Screen flash overlay (used by Michelle/Gary/etc.)
-  if (FX.flashT > 0) {
-    ctx.fillStyle = `rgba(255,255,255,${Math.min(1, FX.flashT * 8)})`;
-    ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
-  }
 }
 
   // -------------------- Keyboard controls --------------------
@@ -3429,32 +3417,7 @@ if (e.key === "Escape") {
     }
   });
 
-  
-if (state.screen === "level3") {
-  if ((e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") && player.onGround && !L3.done && L3.caughtT <= 0) {
-    player.vy = -PHYS.jumpV;
-    player.onGround = false;
-    SFX.jump();
-  }
-
-  // Proceed to Credits after Level 3 ends
-  if (L3.done && (e.key === "Enter" || e.key === " ")) {
-    state.screen = "credits";
-    SFX.start();
-  }
-
-  if (e.key === "Escape") {
-    state.screen = "select";
-    resetLevel1();
-    SFX.tick();
-  }
-  if (e.key === "r" || e.key === "R") {
-    resetLevel3();
-    SFX.tick();
-  }
-}
-
-window.addEventListener("keyup", (e) => keys.delete(e.key));
+  window.addEventListener("keyup", (e) => keys.delete(e.key));
 
   // -------------------- Touch controls --------------------
   canvas.addEventListener("pointerdown", (e) => {
@@ -3480,6 +3443,21 @@ window.addEventListener("keyup", (e) => keys.delete(e.key));
       }
       return;
     }
+
+    // Level 3: allow jumping (disabled only while caught by carolers)
+    if (state.screen === "level3") {
+      if ((e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") && player.onGround && !L3.done) {
+        if (L3.caughtT <= 0) {
+          player.vy = -PHYS.jumpV;
+          player.onGround = false;
+          SFX.jump();
+        } else {
+          SFX.tick();
+        }
+      }
+      // (Other Level 3 key handling remains unchanged elsewhere)
+    }
+
 
     if (state.screen === "level1") {
       // If Level 1 complete: tap center to go to Level 2
