@@ -3415,6 +3415,35 @@ if (e.key === "Escape") {
         SFX.tick();
       }
     }
+
+    // Level 3 (keyboard): jump like other levels, unless currently "caught" by the carolers.
+    if (state.screen === "level3") {
+      if ((e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") && player.onGround && !L3.done) {
+        if (L3.caughtT <= 0) {
+          player.vy = -PHYS.jumpV;
+          player.onGround = false;
+          SFX.jump();
+        } else {
+          SFX.tick();
+        }
+      }
+
+      // When Level 3 is done, proceed to credits (same as tap center)
+      if (L3.done && (e.key === "Enter" || e.key === " ")) {
+        state.screen = "credits";
+        SFX.start();
+      }
+
+      if (e.key === "Escape") {
+        state.screen = "select";
+        resetLevel1();
+        SFX.tick();
+      }
+      if (e.key === "r" || e.key === "R") {
+        resetLevel3();
+        SFX.tick();
+      }
+    }
   });
 
   window.addEventListener("keyup", (e) => keys.delete(e.key));
