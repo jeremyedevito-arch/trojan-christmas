@@ -1107,7 +1107,8 @@ function resetLevel2() {
 
 function resetL2PhaseA() {
   L2.camX = 0;
-  L2.score = 0;
+  // Carry score forward from Level 1 so points accumulate across the full game.
+  L2.score = L1.score || 0;
   L2.done = false;
 
   L2.phase = "trek";
@@ -1851,6 +1852,10 @@ const L3 = {
   lateIcons: [],
   nextLateT: 0.22, // fast and furious
 
+  // extra holiday pickups (low value compared to late slips)
+  treats: [],
+  nextTreatT: 1.2,
+
   // Michelle photos
   michelle: { active: false, x: 0, t: 0 },
   nextMichelleT: 4.5,
@@ -1873,6 +1878,9 @@ function resetLevel3() {
   L3.jamie = { x: 220, dir: 1, speed: 26, clipT: 0 };
   L3.lateIcons = [];
   L3.nextLateT = 0.22;
+
+  L3.treats = [];
+  L3.nextTreatT = 1.1;
 
   L3.michelle = { active: false, x: 0, t: 0 };
   L3.nextMichelleT = 4.5;
@@ -1921,6 +1929,13 @@ L3.carolNotePuffs = [];
   FX.confetti = [];
   FX.flashT = 0;
   FX.sparkles = [];
+}
+
+function spawnTreatL3(floorY) {
+  const kind = Math.random() < 0.55 ? "gift" : "candy";
+  const x = 90 + Math.random() * (VIEW.gw - 180);
+  const y = floorY - 20;
+  L3.treats.push({ kind, x, y, t: 0, alive: true });
 }
 
 function spawnLateIconL3(floorY) {
@@ -2039,6 +2054,28 @@ function updateLevel3(dt) {
     if (!isChar("Colleen") && ic.t > 6) ic.alive = false;
   }
   L3.lateIcons = L3.lateIcons.filter(a => a.alive);
+
+  // extra holiday pickups: gifts + candy (25 pts)
+  L3.nextTreatT -= dt;
+  if (L3.nextTreatT <= 0) {
+    L3.nextTreatT = 0.75 + Math.random() * 1.15;
+    spawnTreatL3(floorY);
+  }
+  for (const tr of L3.treats) {
+    tr.t += dt;
+    // subtle bob so they're noticeable
+    const bob = Math.sin((state.t * 3.2) + tr.x * 0.02) * 1.5;
+    tr._y = tr.y + bob;
+
+    if (rectsOverlap(player.x, player.y, player.w, player.h, tr.x - 10, tr._y - 14, 20, 18)) {
+      tr.alive = false;
+      L3.score += 25;
+      SFX.coin();
+      spawnSparkles(player.x + player.w * 0.5, player.y + 10, 8);
+    }
+    if (tr.t > 10) tr.alive = false;
+  }
+  L3.treats = L3.treats.filter(a => a.alive);
 
   // Carolers swarm: walk the halls; if you get too close they slow + no-jump for 5s and follow you
   if (L3.caughtT > 0) {
@@ -2245,6 +2282,28 @@ function drawLateIconsL3() {
   }
 }
 
+function drawTreatsL3() {
+  for (const tr of L3.treats) {
+    const x = Math.round(tr.x);
+    const y = Math.round(tr._y ?? tr.y);
+    if (tr.kind === "gift") {
+      // gift box
+      drawPixelRect(x - 10, y - 14, 20, 16, "rgba(0,0,0,0.18)");
+      drawPixelRect(x - 9, y - 13, 18, 14, "#E64545");
+      drawPixelRect(x - 1, y - 13, 2, 14, "#FFD24D");
+      drawPixelRect(x - 9, y - 7, 18, 2, "#FFD24D");
+      drawPixelRect(x - 3, y - 17, 6, 4, "#FFD24D");
+    } else {
+      // candy
+      drawPixelRect(x - 9, y - 10, 18, 12, "rgba(0,0,0,0.18)");
+      drawPixelRect(x - 8, y - 9, 16, 10, "#7BD6FF");
+      drawPixelRect(x - 12, y - 8, 4, 8, "#FFB86B");
+      drawPixelRect(x + 8, y - 8, 4, 8, "#FFB86B");
+      drawPixelRect(x - 2, y - 7, 4, 4, "rgba(255,255,255,0.55)");
+    }
+  }
+}
+
 
 function drawMusicNotesL3() {
   if (L3.caughtFxT <= 0) return;
@@ -2326,6 +2385,7 @@ function drawLevel3() {
 
   // Jamie + late slips + Michelle
   drawJamieL3();
+  drawTreatsL3();
   drawLateIconsL3();
   drawCarolersL3();
   drawMusicNotesL3();
