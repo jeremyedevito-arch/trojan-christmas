@@ -2268,12 +2268,6 @@ function drawLevel3() {
       ctx.fillText("📸", VIEW.gw / 2, VIEW.gh * 0.44);
     }
   }
-
-  // Screen flash overlay (used by Michelle/Gary/etc.)
-  if (FX.flashT > 0) {
-    ctx.fillStyle = `rgba(255,255,255,${Math.min(1, FX.flashT * 8)})`;
-    ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
-  }
 }
 
 // -------------------- Draw helpers --------------------
@@ -3327,12 +3321,6 @@ function drawLevel2() {
     ctx.font = "700 12px system-ui, Arial";
     ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.75);
-  }
-
-  // Screen flash overlay (used by Michelle/Gary/etc.)
-  if (FX.flashT > 0) {
-    ctx.fillStyle = `rgba(255,255,255,${Math.min(1, FX.flashT * 8)})`;
-    ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
   }
 }
 
