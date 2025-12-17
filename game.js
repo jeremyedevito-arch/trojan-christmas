@@ -1825,21 +1825,35 @@ function resetLevel3() {
   L3.endT = 0;
   L3.showEndMsg = false;
 
-  // Carolers (about a dozen, smaller)
+  // Carolers (single traveling group, smaller)
+  // Group anchor moves with the hallway and periodically respawns ahead.
+  L3.carolGroup = {
+    wx: L3.camX + VIEW.gw + 260,   // world x anchor
+    paceDir: Math.random() < 0.5 ? -1 : 1,
+    paceT: Math.random() * 1.5,
+    speed: 18 + Math.random() * 10,
+    follow: false,
+  };
+
+  // 9 carolers arranged as a tight 3x3 cluster (50% scale)
   L3.carolers = [];
-  for (let i = 0; i < 12; i++) {
-    const base = 420 + i * 240 + Math.random() * 120;
+  const grid = [
+    {dx:-22, lane:0},{dx: 0, lane:0},{dx:22, lane:0},
+    {dx:-22, lane:1},{dx: 0, lane:1},{dx:22, lane:1},
+    {dx:-22, lane:2},{dx: 0, lane:2},{dx:22, lane:2},
+  ];
+  for (let i = 0; i < 9; i++) {
     L3.carolers.push({
       id: i,
-      wx: base,                 // world x (moves with hallway)
-      lane: (i % 3),            // 0..2 (slight vertical variety)
-      paceDir: Math.random() < 0.5 ? -1 : 1,
-      paceT: Math.random() * 2.0,
-      speed: 16 + Math.random() * 12,
+      dx: grid[i].dx,
+      lane: grid[i].lane,       // 0..2 (slight vertical variety)
+      wx: L3.carolGroup.wx + grid[i].dx,
       active: true,
     });
   }
+
   L3.carolNotePuffs = [];
+
   L3.caughtT = 0;
   L3.caughtBy = -1;
   L3.caughtFxT = 0;
@@ -2002,45 +2016,61 @@ function updateLevel3(dt) {
   }
   L3.carolNotePuffs = L3.carolNotePuffs.filter(n => n.alive);
 
-  // update carolers world positions + recycle
+  // update caroler GROUP + member positions
+  const g = L3.carolGroup;
+
+  // If the group is not currently "caught-following", it paces slightly and drifts off with the hallway.
+  if (L3.caughtT <= 0) {
+    g.follow = false;
+
+    // subtle pacing (in world space)
+    g.paceT += dt;
+    if (g.paceT > 1.7 + Math.random() * 0.7) {
+      g.paceT = 0;
+      g.paceDir *= -1;
+    }
+    g.wx += g.paceDir * g.speed * dt;
+
+    // recycle once it drifts off the left side
+    if ((g.wx - L3.camX) < -220) {
+      g.wx = L3.camX + VIEW.gw + 220 + Math.random() * 420;
+      g.paceDir = Math.random() < 0.5 ? -1 : 1;
+      g.paceT = Math.random() * 1.2;
+      g.speed = 18 + Math.random() * 10;
+    }
+  } else {
+    // While the player is "caught", the whole group follows alongside.
+    g.follow = true;
+    g.wx = L3.camX + player.x + 90;
+  }
+
+  // update member world x from the group anchor
   for (const c of L3.carolers) {
-    if (!c.active) continue;
+    c.wx = g.wx + c.dx;
+  }
 
-    // if not the one currently "caught", pace a little in world space
-    if (c.id !== L3.caughtBy) {
-      c.paceT += dt;
-      if (c.paceT > 1.8 + Math.random() * 0.6) {
-        c.paceT = 0;
-        c.paceDir *= -1;
-      }
-      c.wx += c.paceDir * c.speed * dt;
-    }
+  // Group proximity trigger (single check; obstacle applies as a group)
+  if (L3.caughtT <= 0) {
+    // compute an approximate group center (using the middle caroler)
+    const centerWX = g.wx;
+    const sxCenter = centerWX - L3.camX;
+    const centerY = floorY - 40 - 1 * 6; // middle row
 
-    const sx = c.wx - L3.camX;
-    // recycle ahead when it drifts off left
-    if (sx < -140) {
-      c.wx = L3.camX + VIEW.gw + 220 + Math.random() * 420;
-      c.lane = Math.floor(Math.random() * 3);
-      c.speed = 16 + Math.random() * 12;
-      c.paceDir = Math.random() < 0.5 ? -1 : 1;
-      c.paceT = Math.random() * 1.5;
-    }
+    const dx = Math.abs((sxCenter) - (player.x + player.w * 0.5));
+    const dy = Math.abs((centerY + 12) - (player.y + player.h * 0.5));
 
-    // proximity trigger (only if not currently caught)
-    if (L3.caughtT <= 0) {
-      const cy = floorY - 40 - c.lane * 6;
-      if (Math.abs((sx + 8) - (player.x + player.w * 0.5)) < 42 && Math.abs((cy + 12) - (player.y + player.h * 0.5)) < 34) {
-        L3.caughtT = 5.0;
-        L3.caughtBy = c.id;
-        L3.caughtFxT = 5.0;
-        FX.flashT = 0.06; // tiny "sparkle" feel
-        SFX.jingle();
-      }
+    // Slightly tighter X-range + keep Y-check so jumping over is possible
+    if (dx < 52 && dy < 34) {
+      L3.caughtT = 5.0;
+      L3.caughtBy = 0;     // cosmetic only now
+      L3.caughtFxT = 5.0;
+      FX.flashT = 0.06; // tiny "sparkle" feel
+      SFX.jingle();
     }
   }
 
-
   // Michelle pop-in photos (same vibe as Level 1)
+ (same vibe as Level 1)
   L3.nextMichelleT -= dt;
   if (L3.nextMichelleT <= 0 && !L3.michelle.active) {
     L3.nextMichelleT = 6 + Math.random() * 8;
