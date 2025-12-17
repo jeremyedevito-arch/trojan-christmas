@@ -20,7 +20,12 @@
     ],
   };
 
-  // -------------------- Letterbox view (16:9) + phone zoom --------------------
+  
+  function getCharName() {
+    return (GAME.chars[GAME.selected] && GAME.chars[GAME.selected].name) ? GAME.chars[GAME.selected].name : "Holli";
+  }
+  function isChar(name) { return getCharName() === name; }
+// -------------------- Letterbox view (16:9) + phone zoom --------------------
   let VIEW = { gw: 960, gh: 540, scale: 1, ox: 0, oy: 0 };
 
   function computeView() {
@@ -360,6 +365,7 @@
     shelley: { x: 260, dir: 1, speed: 36, cd: 0 },
     boostT: 0,
     accBoostT: 0,
+    perfectAccT: 0,
     boostLevel: 1,
 
     // NEW: March Hare (Phase A only)
@@ -418,6 +424,7 @@
     L1.shelley = { x: 260, dir: 1, speed: 36, cd: 0 };
     L1.boostT = 0;
     L1.accBoostT = 0;
+    L1.perfectAccT = 0;
     L1.boostLevel = 1;
 
     // March Hare
@@ -540,10 +547,22 @@
     let vx = clamp(520 + (dx - sweet) * 0.55, 360, 780);
     let vy = -680 - (err * 0.45);
 
-    const acc = (L1.accBoostT && L1.accBoostT > 0) ? 0.5 : 1.0;
+    if (L1.perfectAccT && L1.perfectAccT > 0) {
+      // Perfect mode: direct-to-cup ballistic arc from anywhere
+      const g = 1100;
+      const targetX = L1.cup.x + L1.cup.w * 0.5;
+      const targetY = L1.cup.y + 6;
+      const dx2 = targetX - startX;
+      const dy2 = targetY - startY;
+      const tFly = 0.78; // comfy flight time
+      vx = dx2 / tFly;
+      vy = (dy2 - 0.5 * g * tFly * tFly) / tFly;
+    } else {
+      const acc = (L1.accBoostT && L1.accBoostT > 0) ? 0.5 : 1.0;
 
-    vx += (Math.random() * 2 - 1) * 70 * acc;
-    vy += (Math.random() * 2 - 1) * 110 * acc;
+      vx += (Math.random() * 2 - 1) * 70 * acc;
+      vy += (Math.random() * 2 - 1) * 110 * acc;
+    }
 
     vx = clamp(vx, 340, 820);
     vy = clamp(vy, -980, -420);
@@ -683,7 +702,12 @@ function updateNPCs(dt) {
 
     const shY = floorY - 44;
     if (sh.cd <= 0 && rectsOverlap(player.x, player.y, player.w, player.h, sh.x, shY, 16, 44)) {
-      L1.accBoostT = 5.0;
+      if (isChar("Brandon")) {
+        L1.perfectAccT = 5.0;
+        showPhaseBanner("SHELLEY: PERFECT FORM!");
+      } else {
+        L1.accBoostT = 5.0;
+      }
       sh.cd = 0.65;
 
       SFX.start();
@@ -702,13 +726,25 @@ function updateNPCs(dt) {
         h.seed = Math.random() * 10;
         h.x = L1.camX + VIEW.gw + 80 + Math.random() * 220;
         h.y = floorY - 36;
-        h.vx = -(360 + Math.random() * 180); // fast + elusive
+        if (isChar("Holli")) {
+          // Holli is so calm the March Hare comes right to her and waits.
+          h.x = L1.camX + player.x + 120;
+          h.vx = -140;
+        } else {
+          h.vx = -(360 + Math.random() * 180); // fast + elusive
+        }
       }
     } else {
-      h.x += h.vx * dt;
+      if (isChar("Holli")) {
+        const target = L1.camX + player.x + 60;
+        if (h.x > target) h.x += h.vx * dt;
+        else h.x = target; // wait for Holli
+      } else {
+        h.x += h.vx * dt;
+      }
 
       const sx = h.x - L1.camX;
-      const visible = (Math.sin(state.t * 18 + h.seed) > -0.15); // flicker
+      const visible = isChar("Holli") ? true : (Math.sin(state.t * 18 + h.seed) > -0.15); // flicker
 
       // Only "catch" when visible to keep the appear/disappear feel fair
       if (visible && rectsOverlap(player.x, player.y, player.w, player.h, sx, h.y, 22, 16)) {
@@ -867,6 +903,11 @@ function updateFX(dt) {
     if (L1.accBoostT > 0) {
       L1.accBoostT -= dt;
       if (L1.accBoostT < 0) L1.accBoostT = 0;
+    }
+
+    if (L1.perfectAccT > 0) {
+      L1.perfectAccT -= dt;
+      if (L1.perfectAccT < 0) L1.perfectAccT = 0;
     }
 
     const move = PHYS.moveSpeed * (L1.boostLevel || 1);
@@ -1402,6 +1443,12 @@ function updateMarcy(dt, floorY) {
   const dist2 = dx * dx + dy * dy;
 
   if (m.triggerCd <= 0 && L2.slowT <= 0 && dist2 < (120 * 120)) {
+    if (isChar("Emily")) {
+      m.triggerCd = 1.1;
+      showL2Banner("EMILY: NO THANK YOU.");
+      SFX.tick();
+      return;
+    }
     L2.slowT = 5.0;
     m.following = true;
     m.followT = 5.0;
@@ -1553,6 +1600,11 @@ function updateChris(dt, floorY) {
   const sx = c.x - L2.camX;
   if (c.hitCd <= 0 && rectsOverlap(player.x, player.y, player.w, player.h, sx, c.y, c.w, c.h)) {
     c.hitCd = 1.0;
+    if (isChar("Emily")) {
+      showL2Banner("EMILY: NO THANK YOU.");
+      SFX.tick();
+      return;
+    }
     L2.techT = 10.0;
     // Tech items count as “hands full” for jump penalty
     const add = 1 + Math.floor(Math.random() * 2); // 1–2 items
@@ -1921,7 +1973,7 @@ function updateLevel3(dt) {
   if (left) move -= 1;
   if (right) move += 1;
 
-  const slowMul = (L3.caughtT > 0) ? 0.45 : 1;
+  const slowMul = (L3.caughtT > 0 && !isChar("Melissa")) ? 0.45 : 1;
   player.vx = move * PHYS.moveSpeed * slowMul;
   if (Math.abs(player.vx) > 1) player.facing = Math.sign(player.vx);
 
@@ -1963,6 +2015,16 @@ function updateLevel3(dt) {
     ic.t += dt;
     ic.y += ic.vy * dt;
 
+    // Colleen power: late slips settle on the floor and stay until she collects them.
+    if (isChar("Colleen")) {
+      const settleY = floorY - 14;
+      if (ic.y >= settleY) {
+        ic.y = settleY;
+        ic.vy = 0;
+        ic.onFloor = true;
+      }
+    }
+
     if (rectsOverlap(player.x, player.y, player.w, player.h, ic.x, ic.y, 12, 14)) {
       ic.alive = false;
       L3.score += 60;
@@ -1970,8 +2032,8 @@ function updateLevel3(dt) {
       SFX.tick();
       spawnSparkles(player.x + player.w * 0.5, player.y + 10, 10);
     }
-    if (ic.y > floorY + 40) ic.alive = false;
-    if (ic.t > 6) ic.alive = false;
+    if (!isChar("Colleen") && ic.y > floorY + 40) ic.alive = false;
+    if (!isChar("Colleen") && ic.t > 6) ic.alive = false;
   }
   L3.lateIcons = L3.lateIcons.filter(a => a.alive);
 
@@ -2073,7 +2135,7 @@ function updateLevel3(dt) {
   }
 
   // Group proximity trigger (single check; obstacle applies as a group)
-  if (L3.caughtT <= 0) {
+  if (L3.caughtT <= 0 || isChar("Melissa")) {
     // compute an approximate group center (using the middle caroler)
     const centerWX = g.wx;
     const sxCenter = centerWX - L3.camX;
@@ -3389,7 +3451,11 @@ function drawLevel2() {
         const items = (L2.carryFood + L2.carryTech);
         const jm = clamp(1 - items * 0.25, 0, 1);
         if (L2.noJumpT <= 0 && jm > 0.01) {
-          player.vy = -PHYS.jumpV * jm;
+          let jumpMult = 1.0;
+          if (isChar("Devin")) {
+            jumpMult = (L2.phase === "bus") ? 2.0 : 1.35;
+          }
+          player.vy = -PHYS.jumpV * jm * jumpMult;
           player.onGround = false;
           SFX.jump();
         } else {
