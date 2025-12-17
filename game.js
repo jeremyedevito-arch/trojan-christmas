@@ -3599,7 +3599,7 @@ if (state.screen === "level3") {
   let lastTs = 0;
   function loop(ts) {
     const now = ts / 1000;
-    const dt = lastTs ? Math.min(0.033, now - lastTs) : 0;
+    const dt = lastTs ? Math.min(0.033, (now - lastTs) / 1000) : 0;
     lastTs = now;
     state.t = now;
 
