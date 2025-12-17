@@ -1833,26 +1833,24 @@ function resetLevel3() {
     paceT: Math.random() * 1.5,
     speed: 18 + Math.random() * 10,
     follow: false,
+    cooldownT: 0,                 // time off-screen after releasing player
   };
 
-  // 9 carolers arranged as a tight 3x3 cluster (50% scale)
+  // 5 carolers side-by-side (50% scale) — easier to read/avoid/jump over
   L3.carolers = [];
-  const grid = [
-    {dx:-22, lane:0},{dx: 0, lane:0},{dx:22, lane:0},
-    {dx:-22, lane:1},{dx: 0, lane:1},{dx:22, lane:1},
-    {dx:-22, lane:2},{dx: 0, lane:2},{dx:22, lane:2},
+  const row = [
+    { dx: -48 }, { dx: -24 }, { dx: 0 }, { dx: 24 }, { dx: 48 },
   ];
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < 5; i++) {
     L3.carolers.push({
       id: i,
-      dx: grid[i].dx,
-      lane: grid[i].lane,       // 0..2 (slight vertical variety)
-      wx: L3.carolGroup.wx + grid[i].dx,
+      dx: row[i].dx,
+      lane: 1,                 // single row
+      wx: L3.carolGroup.wx + row[i].dx,
       active: true,
     });
   }
-
-  L3.carolNotePuffs = [];
+L3.carolNotePuffs = [];
 
   L3.caughtT = 0;
   L3.caughtBy = -1;
@@ -1979,8 +1977,18 @@ function updateLevel3(dt) {
 
   // Carolers swarm: walk the halls; if you get too close they slow + no-jump for 5s and follow you
   if (L3.caughtT > 0) {
+    const prevCaught = L3.caughtT;
     L3.caughtT -= dt;
     L3.caughtFxT = Math.max(0, L3.caughtFxT - dt);
+
+    // When the recruit-swarm releases the player, send the group off-screen for a bit.
+    if (prevCaught > 0 && L3.caughtT <= 0) {
+      const g = L3.carolGroup;
+      g.cooldownT = 3.8 + Math.random() * 1.6; // ~4–5.5s break before returning
+      g.follow = false;
+      g.wx = L3.camX - 520; // immediately off the left edge
+      g.paceDir = -1;
+    }
 
     // keep the "caught" caroler walking alongside you
     const idx = L3.caughtBy;
@@ -2019,8 +2027,23 @@ function updateLevel3(dt) {
   // update caroler GROUP + member positions
   const g = L3.carolGroup;
 
+  // After releasing the player, the group stays off-screen for a bit before returning.
+  if (g.cooldownT > 0) {
+    g.cooldownT -= dt;
+    g.follow = false;
+    // keep them safely off-screen; they'll be respawned ahead when cooldown ends
+    g.wx = Math.min(g.wx, L3.camX - 420);
+
+    if (g.cooldownT <= 0) {
+      g.wx = L3.camX + VIEW.gw + 260 + Math.random() * 420;
+      g.paceDir = Math.random() < 0.5 ? -1 : 1;
+      g.paceT = Math.random() * 1.2;
+      g.speed = 18 + Math.random() * 10;
+    }
+  }
+
   // If the group is not currently "caught-following", it paces slightly and drifts off with the hallway.
-  if (L3.caughtT <= 0) {
+  if (g.cooldownT <= 0 && L3.caughtT <= 0) {
     g.follow = false;
 
     // subtle pacing (in world space)
@@ -2038,7 +2061,7 @@ function updateLevel3(dt) {
       g.paceT = Math.random() * 1.2;
       g.speed = 18 + Math.random() * 10;
     }
-  } else {
+  } else if (L3.caughtT > 0) {
     // While the player is "caught", the whole group follows alongside.
     g.follow = true;
     g.wx = L3.camX + player.x + 90;
@@ -2054,13 +2077,13 @@ function updateLevel3(dt) {
     // compute an approximate group center (using the middle caroler)
     const centerWX = g.wx;
     const sxCenter = centerWX - L3.camX;
-    const centerY = floorY - 40 - 1 * 6; // middle row
+    const centerY = floorY - 40; // single row
 
     const dx = Math.abs((sxCenter) - (player.x + player.w * 0.5));
     const dy = Math.abs((centerY + 12) - (player.y + player.h * 0.5));
 
     // Slightly tighter X-range + keep Y-check so jumping over is possible
-    if (dx < 52 && dy < 34) {
+    if (dx < 66 && dy < 34) {
       L3.caughtT = 5.0;
       L3.caughtBy = 0;     // cosmetic only now
       L3.caughtFxT = 5.0;
