@@ -22,7 +22,7 @@
 
   
   function getCharName() {
-    return (GAME.chars[GAME.selected] && GAME.chars[GAME.selected].name) ? GAME.chars[GAME.selected].name : "Holli";
+    return (state.chars[state.selected] && state.chars[state.selected].name) ? state.chars[state.selected].name : "Holli";
   }
   function isChar(name) { return getCharName() === name; }
 // -------------------- Letterbox view (16:9) + phone zoom --------------------
