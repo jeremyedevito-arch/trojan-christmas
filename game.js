@@ -1822,8 +1822,6 @@ function resetLevel3() {
   L3.michelle = { active: false, x: 0, t: 0 };
   L3.nextMichelleT = 4.5;
 
-  L3.jumpHeld = false;
-
   L3.endT = 0;
   L3.showEndMsg = false;
 
@@ -1926,24 +1924,6 @@ function updateLevel3(dt) {
   const slowMul = (L3.caughtT > 0) ? 0.45 : 1;
   player.vx = move * PHYS.moveSpeed * slowMul;
   if (Math.abs(player.vx) > 1) player.facing = Math.sign(player.vx);
-
-  // Jump input (Level 3) — allow jumping unless "caught" by carolers
-  const jumpDown =
-    keys.has(" ") || keys.has("ArrowUp") || keys.has("w") || keys.has("W") || touch.jump;
-  if (!jumpDown) L3.jumpHeld = false;
-
-  if (
-    jumpDown &&
-    !L3.jumpHeld &&
-    player.onGround &&
-    !L3.done &&
-    L3.caughtT <= 0
-  ) {
-    player.vy = -PHYS.jumpV;
-    player.onGround = false;
-    L3.jumpHeld = true;
-    SFX.jump();
-  }
 
   // auto-scroll camera
   L3.camX += L3.speed * dt;
@@ -2287,6 +2267,12 @@ function drawLevel3() {
       ctx.font = "900 18px system-ui, Arial";
       ctx.fillText("📸", VIEW.gw / 2, VIEW.gh * 0.44);
     }
+  }
+
+  // Screen flash overlay (used by Michelle/Gary/etc.)
+  if (FX.flashT > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${Math.min(1, FX.flashT * 8)})`;
+    ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
   }
 }
 
@@ -2857,6 +2843,11 @@ function drawMarchHare() {
     drawPhaseBanner();
     drawConfetti();
 
+    if (FX.flashT > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(1, FX.flashT * 8)})`;
+      ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
+    }
+
     if (L1.levelDone) {
       ctx.fillStyle = "rgba(0,0,0,0.55)";
       ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
@@ -3337,6 +3328,12 @@ function drawLevel2() {
     ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.75);
   }
+
+  // Screen flash overlay (used by Michelle/Gary/etc.)
+  if (FX.flashT > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${Math.min(1, FX.flashT * 8)})`;
+    ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
+  }
 }
 
   // -------------------- Keyboard controls --------------------
@@ -3599,7 +3596,7 @@ if (state.screen === "level3") {
   let lastTs = 0;
   function loop(ts) {
     const now = ts / 1000;
-    const dt = lastTs ? Math.min(0.033, (now - lastTs) / 1000) : 0;
+    const dt = lastTs ? Math.min(0.033, now - lastTs) : 0;
     lastTs = now;
     state.t = now;
 
@@ -3628,12 +3625,6 @@ if (state.screen === "level3") {
     }
     else if (state.screen === "credits") {
       drawCredits();
-    }
-
-    // Global screen flash overlay (used by Michelle photos, etc.)
-    if (FX && FX.flashT > 0) {
-      ctx.fillStyle = `rgba(255,255,255,${Math.min(1, FX.flashT * 8)})`;
-      ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
     }
 
     ctx.restore();
