@@ -1046,34 +1046,6 @@ const L2 = {
   },
 };
 
-
-// ======================================================================
-// ✅ LEVEL 3 — Late Slip Blizzard (build-up step 1: space + Jamie + Michelle)
-// One phase, 60s. (Carolers + end freeze-frame will come in later steps.)
-// ======================================================================
-const L3 = {
-  camX: 0,
-  score: 0,
-  phaseT: 60.0,
-  done: false,
-
-  // world
-  platforms: [],
-
-  // Jamie + late slips
-  jamie: { x: 0, dir: 1, speed: 85, clipT: 0 },
-  lateIcons: [],
-  nextLateT: 0.0,
-
-  // Michelle pop-ins
-  michelle: { active: false, x: 0, y: 0, w: 30, h: 44, t: 0, seen: false },
-  posers: [],
-  nextMichelleT: 6.0,
-
-  bannerT: 0,
-  bannerText: "",
-};
-
 function showL2Banner(text) {
   L2.bannerText = text;
   L2.bannerT = 1.35;
@@ -1799,64 +1771,153 @@ function updateLevel2(dt) {
 
   updateFX(dt);
 }
+  
+// ✅ LEVEL 3 — Late Slip Blizzard (step 1: space + Jamie + Michelle)
+const L3 = {
+  camX: 0,
+  speed: 240,
+  score: 0,
+  timeT: 60,
+  done: false,
 
-// -------------------- Level 3 init --------------------
+  jamie: { x: 220, dir: 1, speed: 26, clipT: 0 },
+  lateIcons: [],
+  nextLateT: 0.22, // fast and furious
+
+  michelle: { active: false, x: 0, t: 0 },
+  nextMichelleT: 4.5,
+};
+
 function resetLevel3() {
   L3.camX = 0;
-  L3.score = 0;
-  L3.phaseT = 60.0;
+  L3.score = L2.score || 0; // carry over score from Level 2
+  L3.timeT = 60;
   L3.done = false;
-  L3.bannerT = 0;
-  L3.bannerText = "";
 
-  const floorY = VIEW.gh * 0.78;
+  L3.jamie = { x: 220, dir: 1, speed: 26, clipT: 0 };
+  L3.lateIcons = [];
+  L3.nextLateT = 0.22;
 
-  // simple floor + a few small platforms for light hopping (kept minimal for stability)
-  L3.platforms = [
-    { x: 0, y: floorY, w: 5000, h: VIEW.gh - floorY },
-    { x: 420, y: floorY - 90, w: 170, h: 16 },
-    { x: 860, y: floorY - 120, w: 200, h: 16 },
-    { x: 1320, y: floorY - 100, w: 180, h: 16 },
-  ];
+  L3.michelle = { active: false, x: 0, t: 0 };
+  L3.nextMichelleT = 4.5;
 
-  // player start
+  // reset player
   player.x = 140;
-  player.y = floorY - player.h;
+  player.y = 0;
   player.vx = 0;
   player.vy = 0;
-  player.onGround = true;
-  player.facing = 1;
+  player.onGround = false;
 
-  // Jamie pacing (left half)
-  L3.jamie.x = VIEW.gw * 0.44;
-  L3.jamie.dir = -1;
-  L3.jamie.clipT = 0;
-
-  // Late slips: start quickly
-  L3.lateIcons = [];
-  L3.nextLateT = 0.15;
-
-  // Michelle cadence
-  L3.michelle.active = false;
-  L3.michelle.t = 0;
-  L3.michelle.seen = false;
-  L3.posers = [];
-  L3.nextMichelleT = 5 + Math.random() * 4;
-
+  FX.confetti = [];
   FX.flashT = 0;
   FX.sparkles = [];
-  FX.confetti = [];
 }
 
-function spawnLateIconL3() {
-  // drops from the sky
+function spawnLateIconL3(floorY) {
   L3.lateIcons.push({
-    x: 90 + Math.random() * (VIEW.gw * 0.78),
-    y: -30 - Math.random() * 80,
-    vy: 90 + Math.random() * 90,
+    x: 80 + Math.random() * (VIEW.gw - 160),
+    y: -20 - Math.random() * 60,
+    vy: 260 + Math.random() * 140,
     t: 0,
     alive: true,
   });
+}
+
+function updateLevel3(dt) {
+  const floorY = VIEW.gh * 0.78;
+  if (L3.done) {
+    updateFX(dt);
+    return;
+  }
+
+  // timer
+  L3.timeT -= dt;
+  if (L3.timeT <= 0) {
+    L3.timeT = 0;
+    L3.done = true;
+    SFX.dingding();
+    spawnConfettiBurst();
+    updateFX(dt);
+    return;
+  }
+
+  // movement (same feel as level 2)
+  const left = keys.has("ArrowLeft") || keys.has("a") || keys.has("A") || touch.left;
+  const right = keys.has("ArrowRight") || keys.has("d") || keys.has("D") || touch.right;
+
+  let move = 0;
+  if (left) move -= 1;
+  if (right) move += 1;
+
+  player.vx = move * PHYS.moveSpeed;
+  if (Math.abs(player.vx) > 1) player.facing = Math.sign(player.vx);
+
+  // auto-scroll camera
+  L3.camX += L3.speed * dt;
+
+  // basic physics
+  player.vy += PHYS.gravity * dt;
+  player.x += player.vx * dt;
+  player.y += player.vy * dt;
+
+  // clamp to lane
+  player.x = clamp(player.x, 70, VIEW.gw * 0.84);
+
+  // ground
+  if (player.y + player.h >= floorY) {
+    player.y = floorY - player.h;
+    player.vy = 0;
+    player.onGround = true;
+  } else {
+    player.onGround = false;
+  }
+
+  // Jamie pacing (visual cue)
+  const j = L3.jamie;
+  j.x += j.dir * j.speed * dt;
+  if (j.x < 140) { j.x = 140; j.dir = 1; }
+  if (j.x > VIEW.gw * 0.55) { j.x = VIEW.gw * 0.55; j.dir = -1; }
+  if (j.clipT > 0) j.clipT -= dt;
+
+  // late slips spawn + fall + collect (no cap)
+  L3.nextLateT -= dt;
+  if (L3.nextLateT <= 0) {
+    L3.nextLateT = 0.16 + Math.random() * 0.18;
+    spawnLateIconL3(floorY);
+  }
+
+  for (const ic of L3.lateIcons) {
+    ic.t += dt;
+    ic.y += ic.vy * dt;
+
+    if (rectsOverlap(player.x, player.y, player.w, player.h, ic.x, ic.y, 12, 14)) {
+      ic.alive = false;
+      L3.score += 60;
+      j.clipT = 0.45;
+      SFX.tick();
+      spawnSparkles(player.x + player.w * 0.5, player.y + 10, 10);
+    }
+    if (ic.y > floorY + 40) ic.alive = false;
+    if (ic.t > 6) ic.alive = false;
+  }
+  L3.lateIcons = L3.lateIcons.filter(a => a.alive);
+
+  // Michelle pop-in photos (same vibe as Level 1)
+  L3.nextMichelleT -= dt;
+  if (L3.nextMichelleT <= 0 && !L3.michelle.active) {
+    L3.nextMichelleT = 6 + Math.random() * 8;
+    L3.michelle.active = true;
+    L3.michelle.t = 0;
+    L3.michelle.x = VIEW.gw * (0.60 + Math.random() * 0.30);
+    FX.flashT = 0.12;
+    SFX.shutter();
+  }
+  if (L3.michelle.active) {
+    L3.michelle.t += dt;
+    if (L3.michelle.t > 1.1) L3.michelle.active = false;
+  }
+
+  updateFX(dt);
 }
 
 function drawJamieL3() {
@@ -1886,192 +1947,70 @@ function drawLateIconsL3() {
   }
 }
 
-function showL3Banner(text) {
-  L3.bannerText = text;
-  L3.bannerT = 1.2;
-}
-
-function updateLevel3(dt) {
+function drawMichelleL3() {
+  if (!L3.michelle.active) return;
   const floorY = VIEW.gh * 0.78;
+  const x = Math.round(L3.michelle.x);
+  const y = Math.round(floorY - 44);
 
-  if (L3.bannerT > 0) L3.bannerT -= dt;
+  drawPixelRect(x, y + 18, 14, 18, "#6B3B2A");
+  drawPixelRect(x, y + 34, 14, 8, "#2B2B2B");
+  drawPixelRect(x, y, 14, 16, "#FFD2B5");
+  drawPixelRect(x, y, 14, 6, "#FF6B6B");
 
-  if (L3.done) {
-    updateFX(dt);
-    return;
-  }
-
-  L3.phaseT = Math.max(0, L3.phaseT - dt);
-
-  // gentle auto-scroll so it feels like “hallway chaos” without heavy world logic
-  L3.camX += 120 * dt;
-
-  const left = touch.left || keys.has("ArrowLeft") || keys.has("a") || keys.has("A");
-  const right = touch.right || keys.has("ArrowRight") || keys.has("d") || keys.has("D");
-
-  // movement (screen-space like L2; keep player in band)
-  player.vx = 0;
-  if (left) player.vx -= PHYS.moveSpeed;
-  if (right) player.vx += PHYS.moveSpeed;
-
-  if (player.vx < -5) player.facing = -1;
-  else if (player.vx > 5) player.facing = 1;
-
-  const prevX = player.x;
-  const prevY = player.y;
-
-  player.x += player.vx * dt;
-  player.x = clamp(player.x, 70, VIEW.gw * 0.84);
-
-  // gravity
-  player.vy += PHYS.gravity * dt;
-  player.y += player.vy * dt;
-
-  // simple platform resolve using a temporary L2-like helper:
-  // reuse resolvePlatforms by temporarily pointing L2.platforms at L3.platforms
-  const old = L2.platforms;
-  L2.platforms = L3.platforms;
-  resolvePlatforms(prevX, prevY, floorY);
-  L2.platforms = old;
-
-  // Jamie pacing
-  L3.jamie.x += L3.jamie.dir * L3.jamie.speed * dt;
-  if (L3.jamie.x < 120) { L3.jamie.x = 120; L3.jamie.dir = 1; }
-  if (L3.jamie.x > VIEW.gw * 0.55) { L3.jamie.x = VIEW.gw * 0.55; L3.jamie.dir = -1; }
-  if (L3.jamie.clipT > 0) L3.jamie.clipT = Math.max(0, L3.jamie.clipT - dt);
-
-  // Late slips keep coming (fast and furious)
-  L3.nextLateT -= dt;
-  if (L3.nextLateT <= 0) {
-    L3.nextLateT = 0.18 + Math.random() * 0.22;
-    spawnLateIconL3();
-  }
-
-  for (const ic of L3.lateIcons) {
-    ic.t += dt;
-    ic.y += ic.vy * dt;
-    if (ic.y > floorY - 40) ic.vy = -Math.abs(ic.vy) * 0.20;
-
-    if (rectsOverlap(player.x, player.y, player.w, player.h, ic.x, ic.y, 12, 14)) {
-      ic.alive = false;
-      L3.score += 60;
-      L3.jamie.clipT = 0.35;
-      SFX.tick();
-      spawnSparkles(player.x + player.w * 0.5, player.y + 10, 10);
-    }
-    if (ic.t > 6.5) ic.alive = false;
-  }
-  L3.lateIcons = L3.lateIcons.filter(a => a.alive);
-
-  // Michelle pop-in + flash (like L1)
-  L3.nextMichelleT -= dt;
-  if (L3.nextMichelleT <= 0 && !L3.michelle.active) {
-    L3.nextMichelleT = 7 + Math.random() * 9;
-    L3.michelle.active = true;
-    L3.michelle.t = 0;
-    L3.michelle.x = L3.camX + VIEW.gw * (0.62 + Math.random() * 0.28);
-
-    L3.posers = [];
-    const n = 2 + Math.floor(Math.random() * 3);
-    for (let i = 0; i < n; i++) {
-      L3.posers.push({
-        x: (L3.michelle.x - L3.camX) - 70 - i * 26,
-        y: floorY - 30,
-        t: 0,
-        alive: true,
-      });
-    }
-
-    FX.flashT = 0.12;
-    SFX.shutter();
-    showL3Banner("MICHELLE: SMILE! 📸");
-  }
-
-  if (L3.michelle.active) {
-    L3.michelle.t += dt;
-    if (L3.michelle.t > 1.2) L3.michelle.active = false;
-  }
-
-  for (const p of L3.posers) {
-    p.t += dt;
-    if (p.t > 1.0) p.alive = false;
-  }
-  L3.posers = L3.posers.filter(p => p.alive);
-
-  // end
-  if (L3.phaseT <= 0) {
-    L3.done = true;
-    SFX.dingding();
-    showL3Banner("ASSIGNMENTS COLLECTED!");
-  }
-
-  updateFX(dt);
+  // camera
+  drawPixelRect(x - 18, y + 20, 16, 10, "rgba(255,255,255,0.72)");
+  drawPixelRect(x - 14, y + 22, 6, 4, "rgba(0,0,0,0.35)");
 }
 
 function drawLevel3() {
   const floorY = VIEW.gh * 0.78;
-
-  // backdrop (reuse L1 hallway)
   drawHallwayBackdrop(floorY);
 
-  // slips + NPCs
-  drawLateIconsL3();
+  // A slightly different header tint so it feels like a new round
+  drawPixelRect(0, 0, VIEW.gw, 34, "rgba(255,90,0,0.12)");
+
+  // Jamie + late slips + Michelle
   drawJamieL3();
+  drawLateIconsL3();
+  drawMichelleL3();
 
-  // Michelle + posers
-  if (L3.michelle.active) {
-    const sx = Math.round((L3.michelle.x - L3.camX));
-    const y = Math.round(floorY - 44);
-
-    drawPixelRect(sx, y + 16, 16, 20, "#5A9BD5");
-    drawPixelRect(sx, y + 30, 16, 6, "#2B2B2B");
-    drawPixelRect(sx, y, 16, 16, "#FFD2B5");
-    drawPixelRect(sx, y, 16, 6, "#4B2D1F");
-    // camera
-    drawPixelRect(sx + 18, y + 18, 10, 8, "rgba(255,255,255,0.70)");
-    drawPixelRect(sx + 19, y + 20, 8, 2, "rgba(0,0,0,0.25)");
-  }
-
-  for (const p of L3.posers) {
-    drawPixelRect(Math.round(p.x), Math.round(p.y), 16, 26, "rgba(255,255,255,0.10)");
-  }
-
-  // player
-  drawPlayer();
+  drawChibiPlayer();
+  drawSparkles();
+  drawConfetti();
 
   // HUD
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
-  ctx.font = "800 14px system-ui, Arial";
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.font = "700 16px system-ui, Arial";
   ctx.textAlign = "left";
-  ctx.fillText(`Level 3 — Late Slips`, 14, 20);
-  ctx.fillText(`Score: ${L3.score}`, 14, 40);
+  ctx.fillText(`Level 3 — Late Slip Blizzard`, 16, 38);
+  ctx.fillText(`Score: ${L3.score}`, 16, 60);
 
   ctx.textAlign = "right";
-  ctx.fillText(`Time: ${Math.ceil(L3.phaseT)}s`, VIEW.gw - 14, 20);
-  ctx.fillText(`Back: Esc`, VIEW.gw - 14, 40);
-
-  drawPhaseBanner(L3.bannerText, L3.bannerT);
+  ctx.fillText(`Time: ${Math.ceil(L3.timeT)}s`, VIEW.gw - 16, 38);
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  ctx.font = "700 13px system-ui, Arial";
+  ctx.fillText(`Back: Esc`, VIEW.gw - 16, 60);
 
   if (L3.done) {
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillStyle = "rgba(0,0,0,0.60)";
     ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
 
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.textAlign = "center";
     ctx.font = "900 28px system-ui, Arial";
-    ctx.fillText("ASSIGNMENTS COLLECTED.", VIEW.gw / 2, VIEW.gh * 0.46);
+    ctx.fillText("ASSIGNMENTS COLLECTED.", VIEW.gw / 2, VIEW.gh * 0.44);
 
     ctx.font = "800 16px system-ui, Arial";
-    ctx.fillText(`Final score: ${L3.score}`, VIEW.gw / 2, VIEW.gh * 0.56);
+    ctx.fillText(`Final Score: ${L3.score}`, VIEW.gw / 2, VIEW.gh * 0.52);
 
     ctx.font = "700 12px system-ui, Arial";
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
-    ctx.fillText("Enter / center tap: Level 3", VIEW.gw / 2, VIEW.gh * 0.64);
-    ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.69);
+    ctx.fillStyle = "rgba(255,255,255,0.70)";
+    ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.60);
   }
 }
 
-  // -------------------- Draw helpers --------------------
+// -------------------- Draw helpers --------------------
   function clearScreen() {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, state.w, state.h);
@@ -2665,8 +2604,7 @@ function drawMarchHare() {
 
       ctx.font = "700 12px system-ui, Arial";
       ctx.fillStyle = "rgba(255,255,255,0.55)";
-      ctx.fillText("Enter / center tap: Level 3", VIEW.gw / 2, VIEW.gh * 0.64);
-    ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.69);
+      ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.66);
       }
   }
 
@@ -3085,10 +3023,17 @@ function drawLevel2() {
     const f = clamp(L2.deliveredFood / 20, 0, 1);
     drawPixelRect(mx + 2, my + 2, Math.round((meterW - 4) * f), meterH - 4, "rgba(123,214,255,0.55)");
 
+    ctx.font = "800 14px system-ui, Arial";
+    ctx.fillStyle = "rgba(255,255,255,0.90)";
+    ctx.fillText("Press Enter to start Level 3", VIEW.gw / 2, VIEW.gh * 0.66);
+
     ctx.font = "700 12px system-ui, Arial";
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
-    ctx.fillText("Enter / center tap: Level 3", VIEW.gw / 2, VIEW.gh * 0.64);
-    ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.69);
+    ctx.fillStyle = "rgba(255,255,255,0.70)";
+    ctx.fillText("(Tap/Click center on mobile)", VIEW.gw / 2, VIEW.gh * 0.70);
+
+    ctx.font = "700 12px system-ui, Arial";
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fillText("Press Esc to return to Character Select", VIEW.gw / 2, VIEW.gh * 0.75);
   }
 }
 
@@ -3158,7 +3103,15 @@ function drawLevel2() {
         }
       }
 
-      if (e.key === "Escape") {
+      
+// Proceed to Level 3 from Level 2 Complete
+if (L2.done && (e.key === "Enter" || e.key === " ")) {
+  resetLevel3();
+  state.screen = "level3";
+  SFX.start();
+}
+
+if (e.key === "Escape") {
         state.screen = "select";
         resetLevel1();
         SFX.tick();
@@ -3168,7 +3121,9 @@ function drawLevel2() {
         SFX.tick();
       }
     }
+  });
 
+  
 if (state.screen === "level3") {
   if ((e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") && player.onGround && !L3.done) {
     player.vy = -PHYS.jumpV;
@@ -3187,10 +3142,7 @@ if (state.screen === "level3") {
   }
 }
 
-
-  });
-
-  window.addEventListener("keyup", (e) => keys.delete(e.key));
+window.addEventListener("keyup", (e) => keys.delete(e.key));
 
   // -------------------- Touch controls --------------------
   canvas.addEventListener("pointerdown", (e) => {
@@ -3268,15 +3220,14 @@ if (state.screen === "level3") {
   return;
 }
 
-    
-if (state.screen === "level2") {
-  // If Level 2 complete: tap center to go to Level 3
-  if (L2.done && gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
-    resetLevel3();
-    state.screen = "level3";
-    SFX.start();
-    return;
-  }
+    if (state.screen === "level2") {
+// If Level 2 complete: tap center to go to Level 3
+if (L2.done && gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+  resetLevel3();
+  state.screen = "level3";
+  SFX.start();
+  return;
+}
 
       if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
         if (player.onGround && !L2.done) {
@@ -3294,16 +3245,10 @@ if (state.screen === "level2") {
       } else {
         setTouchFromGX(gx);
       }
-      return;
-    }
 
 if (state.screen === "level3") {
   if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
-    if (player.onGround && !L3.done) {
-      player.vy = -PHYS.jumpV;
-      player.onGround = false;
-      SFX.jump();
-    }
+    if (player.onGround && !L3.done) { player.vy = -PHYS.jumpV; player.onGround = false; SFX.jump(); }
     clearTouch();
   } else {
     setTouchFromGX(gx);
@@ -3311,7 +3256,8 @@ if (state.screen === "level3") {
   return;
 }
 
-
+      return;
+    }
   });
 
   canvas.addEventListener("pointermove", (e) => {
@@ -3355,12 +3301,10 @@ if (state.screen === "level3") {
       updateLevel2(dt);
       drawLevel2();
     }
-
-else if (state.screen === "level3") {
-  updateLevel3(dt);
-  drawLevel3();
-}
-
+    else if (state.screen === "level3") {
+      updateLevel3(dt);
+      drawLevel3();
+    }
 
     ctx.restore();
     requestAnimationFrame(loop);
