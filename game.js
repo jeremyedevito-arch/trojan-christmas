@@ -727,18 +727,18 @@ function updateNPCs(dt) {
         h.x = L1.camX + VIEW.gw + 80 + Math.random() * 220;
         h.y = floorY - 36;
         if (isChar("Holli")) {
-          // Holli is so calm the March Hare comes right to her and waits.
-          h.x = L1.camX + player.x + 120;
-          h.vx = -140;
+          // Holli is so calm the March Hare parks itself mid-screen and waits to be collected.
+          h._screenLock = true;
+          h.vx = 0;
+          h.x = L1.camX + VIEW.gw * 0.5;
         } else {
           h.vx = -(360 + Math.random() * 180); // fast + elusive
         }
       }
     } else {
       if (isChar("Holli")) {
-        const target = L1.camX + player.x + 60;
-        if (h.x > target) h.x += h.vx * dt;
-        else h.x = target; // wait for Holli
+        // Stay locked in the middle of the screen so Holli can simply walk up and collect.
+        h.x = L1.camX + VIEW.gw * 0.5;
       } else {
         h.x += h.vx * dt;
       }
@@ -749,6 +749,7 @@ function updateNPCs(dt) {
       // Only "catch" when visible to keep the appear/disappear feel fair
       if (visible && rectsOverlap(player.x, player.y, player.w, player.h, sx, h.y, 22, 16)) {
         h.active = false;
+        h._screenLock = false;
         h.t = 7 + Math.random() * 6; // gone for a bit
         L1.score += 300;
         SFX.dingding();
@@ -758,6 +759,7 @@ function updateNPCs(dt) {
 
       if (sx < -140) {
         h.active = false;
+        h._screenLock = false;
         h.t = 4 + Math.random() * 4;
       }
     }
@@ -1859,6 +1861,7 @@ const L3 = {
   caughtT: 0,         // remaining slow/no-jump time
   caughtBy: -1,
   caughtFxT: 0,
+  melissaSingT: 0,
 };
 
 function resetLevel3() {
@@ -2077,6 +2080,41 @@ function updateLevel3(dt) {
     L3._noteSpawnT = 0;
   }
 
+  // Melissa superpower: carolers will follow and sing, but do not slow or ground her.
+  if (isChar("Melissa") && L3.melissaSingT > 0) {
+    const prev = L3.melissaSingT;
+    L3.melissaSingT = Math.max(0, L3.melissaSingT - dt);
+
+    // Follow alongside while singing.
+    const gg = L3.carolGroup;
+    gg.follow = true;
+    gg.wx = L3.camX + player.x + 90;
+
+    // Notes + jingles, same visual feel as being 'caught'.
+    if ((L3._noteSpawnT = (L3._noteSpawnT || 0) - dt) <= 0) {
+      L3._noteSpawnT = 0.14;
+      const nx = player.x + player.w + 10;
+      const ny = player.y + 10 + Math.random() * 14;
+      L3.carolNotePuffs.push({
+        x: nx,
+        y: ny,
+        vx: 24 + Math.random() * 18,
+        vy: -22 - Math.random() * 16,
+        t: 0,
+        alive: true,
+      });
+    }
+
+    // When singing ends, send them off-screen for a bit before returning.
+    if (prev > 0 && L3.melissaSingT <= 0) {
+      const gg2 = L3.carolGroup;
+      gg2.cooldownT = 3.8 + Math.random() * 1.6;
+      gg2.follow = false;
+      gg2.wx = L3.camX - 520;
+      gg2.paceDir = -1;
+    }
+  }
+
   // update note puffs
   for (const n of L3.carolNotePuffs) {
     n.t += dt;
@@ -2135,7 +2173,7 @@ function updateLevel3(dt) {
   }
 
   // Group proximity trigger (single check; obstacle applies as a group)
-  if (L3.caughtT <= 0 || isChar("Melissa")) {
+  if (L3.caughtT <= 0 && g.cooldownT <= 0 && L3.melissaSingT <= 0) {
     // compute an approximate group center (using the middle caroler)
     const centerWX = g.wx;
     const sxCenter = centerWX - L3.camX;
@@ -2146,11 +2184,19 @@ function updateLevel3(dt) {
 
     // Slightly tighter X-range + keep Y-check so jumping over is possible
     if (dx < 66 && dy < 34) {
-      L3.caughtT = 5.0;
-      L3.caughtBy = 0;     // cosmetic only now
-      L3.caughtFxT = 5.0;
-      FX.flashT = 0.06; // tiny "sparkle" feel
-      SFX.jingle();
+      if (isChar("Melissa")) {
+        // Melissa: they sing and follow, but do not restrict movement.
+        L3.melissaSingT = 5.0;
+        L3.caughtFxT = 5.0;
+        FX.flashT = 0.06;
+        SFX.jingle();
+      } else {
+        L3.caughtT = 5.0;
+        L3.caughtBy = 0;     // cosmetic only now
+        L3.caughtFxT = 5.0;
+        FX.flashT = 0.06; // tiny "sparkle" feel
+        SFX.jingle();
+      }
     }
   }
 
