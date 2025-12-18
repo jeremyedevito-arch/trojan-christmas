@@ -1859,7 +1859,7 @@ const L3 = {
   // Michelle photos
   michelle: { active: false, x: 0, t: 0 },
   nextMichelleT: 4.5,
-  enableMichelle: false,
+  enableMichelle: true,
 
   // Carolers (obstacle swarm)
   carolers: [],
@@ -1884,7 +1884,8 @@ function resetLevel3() {
   L3.nextTreatT = 1.1;
 
   L3.michelle = { active: false, x: 0, t: 0 };
-  L3.nextMichelleT = 4.5;
+  L3.nextMichelleT = 6.0;
+  L3.enableMichelle = true;
 
   L3.endT = 0;
   L3.showEndMsg = false;
@@ -2245,16 +2246,16 @@ function updateLevel3(dt) {
   if (L3.enableMichelle) {
     L3.nextMichelleT -= dt;
     if (L3.nextMichelleT <= 0 && !L3.michelle.active) {
-      L3.nextMichelleT = 6 + Math.random() * 8;
+      L3.nextMichelleT = 8 + Math.random() * 10;
       L3.michelle.active = true;
       L3.michelle.t = 0;
-      L3.michelle.x = VIEW.gw * (0.60 + Math.random() * 0.30);
-      FX.flashT = 0.12;
+      L3.michelle.x = VIEW.gw * (0.55 + Math.random() * 0.35);
+FX.flashT = 0.12;
       SFX.shutter();
     }
     if (L3.michelle.active) {
       L3.michelle.t += dt;
-      if (L3.michelle.t > 1.1) L3.michelle.active = false;
+      if (L3.michelle.t > 1.2) L3.michelle.active = false;
     }
   }
 
