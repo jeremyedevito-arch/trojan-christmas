@@ -1859,6 +1859,7 @@ const L3 = {
   // Michelle photos
   michelle: { active: false, x: 0, t: 0 },
   nextMichelleT: 4.5,
+  enableMichelle: false,
 
   // Carolers (obstacle swarm)
   carolers: [],
@@ -1934,7 +1935,10 @@ L3.carolNotePuffs = [];
 function spawnTreatL3(floorY) {
   const kind = Math.random() < 0.55 ? "gift" : "candy";
   const x = 90 + Math.random() * (VIEW.gw - 180);
-  const y = floorY - 20;
+  // hover in the air like coins/food (not on the floor)
+  const top = 120;
+  const bottom = floorY - 90;
+  const y = top + Math.random() * Math.max(30, (bottom - top));
   L3.treats.push({ kind, x, y, t: 0, alive: true });
 }
 
@@ -1953,8 +1957,8 @@ function updateLevel3(dt) {
   if (L3.done) {
     L3.endT += dt;
     if (L3.endT > 0.35) L3.showEndMsg = true;
-    // keep Michelle visible briefly
-    if (L3.michelle.active) {
+    // Michelle is disabled for now while we stabilize Level 3
+    if (L3.enableMichelle && L3.michelle.active) {
       L3.michelle.t += dt;
       if (L3.michelle.t > 1.2) L3.michelle.active = false;
     }
@@ -2070,7 +2074,7 @@ function updateLevel3(dt) {
     if (rectsOverlap(player.x, player.y, player.w, player.h, tr.x - 10, tr._y - 14, 20, 18)) {
       tr.alive = false;
       L3.score += 25;
-      SFX.coin();
+      SFX.collect();
       spawnSparkles(player.x + player.w * 0.5, player.y + 10, 8);
     }
     if (tr.t > 10) tr.alive = false;
@@ -2237,19 +2241,21 @@ function updateLevel3(dt) {
     }
   }
 
-  // Michelle pop-in photos (same vibe as Level 1)
-  L3.nextMichelleT -= dt;
-  if (L3.nextMichelleT <= 0 && !L3.michelle.active) {
-    L3.nextMichelleT = 6 + Math.random() * 8;
-    L3.michelle.active = true;
-    L3.michelle.t = 0;
-    L3.michelle.x = VIEW.gw * (0.60 + Math.random() * 0.30);
-    FX.flashT = 0.12;
-    SFX.shutter();
-  }
-  if (L3.michelle.active) {
-    L3.michelle.t += dt;
-    if (L3.michelle.t > 1.1) L3.michelle.active = false;
+  // Michelle pop-in photos (disabled for now while we stabilize Level 3)
+  if (L3.enableMichelle) {
+    L3.nextMichelleT -= dt;
+    if (L3.nextMichelleT <= 0 && !L3.michelle.active) {
+      L3.nextMichelleT = 6 + Math.random() * 8;
+      L3.michelle.active = true;
+      L3.michelle.t = 0;
+      L3.michelle.x = VIEW.gw * (0.60 + Math.random() * 0.30);
+      FX.flashT = 0.12;
+      SFX.shutter();
+    }
+    if (L3.michelle.active) {
+      L3.michelle.t += dt;
+      if (L3.michelle.t > 1.1) L3.michelle.active = false;
+    }
   }
 
   updateFX(dt);
@@ -2389,7 +2395,7 @@ function drawLevel3() {
   drawLateIconsL3();
   drawCarolersL3();
   drawMusicNotesL3();
-  drawMichelleL3();
+  if (L3.enableMichelle) drawMichelleL3();
 
   drawChibiPlayer();
   drawSparkles();
