@@ -1869,6 +1869,7 @@ const L3 = {
   caughtBy: -1,
   caughtFxT: 0,
   melissaSingT: 0,
+  carolSongCd: 0,
 };
 
 function resetLevel3() {
@@ -1970,6 +1971,8 @@ function updateLevel3(dt) {
 
   // timer
   L3.timeT -= dt;
+  if (L3.melissaSingT > 0) L3.melissaSingT = Math.max(0, L3.melissaSingT - dt);
+
   if (L3.timeT <= 0) {
     L3.timeT = 0;
     L3.done = true;
@@ -2260,6 +2263,20 @@ FX.flashT = 0.12;
     }
   }
 
+
+  // Caroler singing sound: only while the group has you (or while they serenade Melissa).
+  const singingT = Math.max(L3.caughtFxT || 0, L3.melissaSingT || 0);
+  if (singingT > 0) {
+    L3.carolSongCd -= dt;
+    if (L3.carolSongCd <= 0) {
+      // light seasonal jingle; keep it sparse so it doesn't overwhelm other SFX
+      SFX.jingle();
+      L3.carolSongCd = 0.75;
+    }
+  } else {
+    L3.carolSongCd = 0;
+  }
+
   updateFX(dt);
 }
 
@@ -2269,7 +2286,7 @@ function drawJamieL3() {
   const y = Math.round(floorY - 42);
 
   drawPixelRect(x, y + 16, 16, 20, "#FFD24D");
-  drawPixelRect(x, y + 30, 16, 6, "#2B2B2B");
+  drawPixelRect(x, y + 30, 16, 6, "#555555");
   drawPixelRect(x, y, 16, 16, "#FFD2B5");
   drawPixelRect(x, y, 16, 6, "#F2D16B");
 
@@ -2374,8 +2391,8 @@ function drawMichelleL3() {
   const x = Math.round(L3.michelle.x);
   const y = Math.round(floorY - 44);
 
-  drawPixelRect(x, y + 18, 14, 18, "#6B3B2A");
-  drawPixelRect(x, y + 34, 14, 8, "#2B2B2B");
+  drawPixelRect(x, y + 18, 14, 18, "#B565D9");
+  drawPixelRect(x, y + 34, 14, 8, "#555555");
   drawPixelRect(x, y, 14, 16, "#FFD2B5");
   drawPixelRect(x, y, 14, 6, "#FF6B6B");
 
@@ -2609,7 +2626,7 @@ function drawLevel3() {
     const y = Math.round(floorY - 42);
 
     drawPixelRect(x, y + 16, 16, 20, "#FFD24D");
-    drawPixelRect(x, y + 30, 16, 6, "#2B2B2B");
+    drawPixelRect(x, y + 30, 16, 6, "#555555");
     drawPixelRect(x, y, 16, 16, "#FFD2B5");
     drawPixelRect(x, y, 16, 6, "#F2D16B");
 
@@ -2640,8 +2657,8 @@ function drawShelley() {
   drawPixelRect(x + 3, y + 42, 10, 3, "rgba(0,0,0,0.25)");
 
   // body (navy-ish blazer), skirt/pants, head
-  drawPixelRect(x, y + 18, 16, 18, "#1A2E4A");
-  drawPixelRect(x, y + 34, 16, 8, "#2B2B2B");
+  drawPixelRect(x, y + 18, 16, 18, "#5B8CCB");
+  drawPixelRect(x, y + 34, 16, 8, "#555555");
   drawPixelRect(x, y, 16, 16, "#FFD2B5");
   drawPixelRect(x, y, 16, 6, "#6B3B2A"); // hair
 
@@ -2742,7 +2759,7 @@ function drawMarchHare() {
     const x = Math.round(L1.michelle.x);
     const y = Math.round(floorY - 44);
 
-    drawPixelRect(x, y + 18, 14, 18, "#6B3B2A");
+    drawPixelRect(x, y + 18, 14, 18, "#B565D9");
     drawPixelRect(x, y, 14, 16, "#FFD2B5");
     drawPixelRect(x, y, 14, 5, "#FFD24D");
     drawPixelRect(x + 16, y + 18, 12, 8, "rgba(255,255,255,0.80)");
@@ -3137,23 +3154,23 @@ function drawPriamNPC() {
   drawPixelRect(x + 7, y + p.h - 3, p.w - 14, 3, "rgba(0,0,0,0.25)");
 
   // toga (maroon)
-  drawPixelRect(x + 6, y + 18, 22, 26, "rgba(128,0,32,0.95)");
-  drawPixelRect(x + 8, y + 20, 18, 22, "rgba(255,255,255,0.10)");
+  drawPixelRect(x + 6, y + 18, 22, 26, "rgba(190,0,60,0.95)");
+  drawPixelRect(x + 8, y + 20, 18, 22, "rgba(255,255,255,0.18)");
 
   // head
   drawPixelRect(x + 9, y + 4, 16, 14, "#D6B08A");
   drawPixelRect(x + 9, y + 4, 16, 5, "#4A2A16");
 
   // crown
-  drawPixelRect(x + 10, y + 2, 14, 2, "#FFD24D");
-  drawPixelRect(x + 10, y + 0, 2, 2, "#FFD24D");
-  drawPixelRect(x + 16, y + 0, 2, 2, "#FFD24D");
-  drawPixelRect(x + 22, y + 0, 2, 2, "#FFD24D");
+  drawPixelRect(x + 10, y + 2, 14, 2, "#FFE27A");
+  drawPixelRect(x + 10, y + 0, 2, 2, "#FFE27A");
+  drawPixelRect(x + 16, y + 0, 2, 2, "#FFE27A");
+  drawPixelRect(x + 22, y + 0, 2, 2, "#FFE27A");
 
   // beggar bucket
   drawPixelRect(x + 24, y + 30, 8, 10, "rgba(0,0,0,0.35)");
   drawPixelRect(x + 25, y + 31, 6, 8, "rgba(255,255,255,0.14)");
-  drawPixelRect(x + 26, y + 33, 4, 2, "#FFD24D");
+  drawPixelRect(x + 26, y + 33, 4, 2, "#FFE27A");
 }
 
 function drawMarcyNPC() {
@@ -3167,8 +3184,8 @@ function drawMarcyNPC() {
   drawPixelRect(x + 7, y + m.h - 3, m.w - 14, 3, "rgba(0,0,0,0.25)");
 
   // jacket
-  drawPixelRect(x + 6, y + 18, 22, 26, "rgba(255,255,255,0.14)");
-  drawPixelRect(x + 8, y + 20, 18, 22, "rgba(0,0,0,0.18)");
+  drawPixelRect(x + 6, y + 18, 22, 26, "rgba(123,214,255,0.78)");
+  drawPixelRect(x + 8, y + 20, 18, 22, "rgba(255,255,255,0.22)");
 
   // head
   drawPixelRect(x + 9, y + 4, 16, 14, "#D1A98B");
@@ -3193,7 +3210,7 @@ function drawGaryNPC() {
   drawPixelRect(x + 7, y + g.h - 3, g.w - 14, 3, "rgba(0,0,0,0.25)");
 
   // suit jacket (dark) + tie (maroon)
-  drawPixelRect(x + 6, y + 18, 22, 26, "rgba(20,25,38,0.92)");
+  drawPixelRect(x + 6, y + 18, 22, 26, "rgba(90,120,180,0.86)");
   drawPixelRect(x + 16, y + 20, 2, 22, "rgba(128,0,32,0.90)");
 
   // head + hair
@@ -3215,8 +3232,8 @@ function drawChrisNPC() {
   drawPixelRect(x + 7, y + c.h - 3, c.w - 14, 3, "rgba(0,0,0,0.25)");
 
   // hoodie
-  drawPixelRect(x + 6, y + 18, 22, 26, "rgba(255,255,255,0.12)");
-  drawPixelRect(x + 8, y + 20, 18, 22, "rgba(0,0,0,0.22)");
+  drawPixelRect(x + 6, y + 18, 22, 26, "rgba(255,167,38,0.72)");
+  drawPixelRect(x + 8, y + 20, 18, 22, "rgba(255,255,255,0.20)");
 
   // head + hair
   drawPixelRect(x + 9, y + 4, 16, 14, "#D1A98B");
