@@ -3012,11 +3012,6 @@ function drawMarchHare() {
     drawPhaseBanner();
     drawConfetti();
 
-    if (FX.flashT > 0) {
-      ctx.fillStyle = `rgba(255,255,255,${Math.min(1, FX.flashT * 8)})`;
-      ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
-    }
-
     if (L1.levelDone) {
       ctx.fillStyle = "rgba(0,0,0,0.55)";
       ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
@@ -3045,6 +3040,15 @@ function drawMarchHare() {
 
 
 // -------------------- Level 2 draw --------------------
+
+function drawFlashOverlay() {
+  if (FX.flashT <= 0) return;
+  ctx.save();
+  ctx.fillStyle = `rgba(255,255,255,${Math.min(1, FX.flashT * 8)})`;
+  ctx.fillRect(0, 0, VIEW.gw, VIEW.gh);
+  ctx.restore();
+}
+
 function drawCoin(x, y, r) {
   // Slightly nicer “coin” (pixel-y circle with rim + shine)
   const xx = Math.round(x);
@@ -3812,6 +3816,8 @@ if (state.screen === "level3") {
     else if (state.screen === "credits") {
       drawCredits();
     }
+
+    drawFlashOverlay();
 
     ctx.restore();
     requestAnimationFrame(loop);
