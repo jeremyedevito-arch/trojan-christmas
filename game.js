@@ -3707,34 +3707,115 @@ if (e.key === "Escape") {
 
   window.addEventListener("keyup", (e) => keys.delete(e.key));
 
-  // -------------------- Touch controls --------------------
-  canvas.addEventListener("pointerdown", (e) => {
-    ensureAudio();
-    const { gx, gy } = screenToGame(e.clientX, e.clientY);
-    if (!inGameBounds(gx, gy)) return;
+  
+// -------------------- Touch controls --------------------
+// NOTE: We use pointer events so the same code path works on mouse + touch.
+// Left third = move left, right third = move right, center third = jump / confirm.
+canvas.addEventListener("pointerdown", (e) => {
+  ensureAudio();
+  const { gx, gy } = screenToGame(e.clientX, e.clientY);
+  if (!inGameBounds(gx, gy)) return;
 
-    if (state.screen === "title") {
-      state.screen = "select";
+  // prevent page scroll/zoom gestures on mobile while interacting with the canvas
+  if (e.cancelable) e.preventDefault();
+
+  if (state.screen === "title") {
+    state.screen = "select";
+    SFX.start();
+    return;
+  }
+
+  if (state.screen === "select") {
+    if (gx < VIEW.gw * 0.33) {
+      state.selected = (state.selected + state.chars.length - 1) % state.chars.length;
+      SFX.tick();
+    } else if (gx > VIEW.gw * 0.66) {
+      state.selected = (state.selected + 1) % state.chars.length;
+      SFX.tick();
+    } else {
+      const name = state.chars[state.selected].name;
+      player.style = CHAR_STYLE[name] || CHAR_STYLE.Holli;
+      resetLevel1();
+      state.screen = "level1";
       SFX.start();
+    }
+    return;
+  }
+
+  if (state.screen === "level1") {
+    // Level 1 complete -> tap center to start Level 2
+    if (L1.levelDone && gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+      resetLevel2();
+      state.screen = "level2";
+      SFX.start();
+      clearTouch();
       return;
     }
 
-    if (state.screen === "select") {
-      if (gx < VIEW.gw * 0.33) { state.selected = (state.selected + state.chars.length - 1) % state.chars.length; SFX.tick(); }
-      else if (gx > VIEW.gw * 0.66) { state.selected = (state.selected + 1) % state.chars.length; SFX.tick(); }
-      else {
-        const name = state.chars[state.selected].name;
-        player.style = CHAR_STYLE[name] || CHAR_STYLE.Holli;
-        resetLevel1();
-        state.screen = "level1";
-        SFX.start();
+    if (L1.phase === "carrot" || L1.phase === "colouring") {
+      if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+        if (player.onGround) {
+          player.vy = -PHYS.jumpV;
+          player.onGround = false;
+          SFX.jump();
+        }
+        clearTouch();
+      } else {
+        setTouchFromGX(gx);
       }
+    } else if (L1.phase === "shot") {
+      if (gx > VIEW.gw * 0.66 && gy < VIEW.gh * 0.35) {
+        fireShot();
+        clearTouch();
+      } else {
+        setTouchFromGX(gx);
+      }
+    }
+    return;
+  }
+
+  if (state.screen === "level2") {
+    // Level 2 complete -> tap center to start Level 3
+    if (L2.done && gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+      resetLevel3();
+      state.screen = "level3";
+      SFX.start();
+      clearTouch();
       return;
     }
 
-    // Level 3: allow jumping (disabled only while caught by carolers)
-    if (state.screen === "level3") {
-      if ((e.key === " " || e.key === "ArrowUp" || e.key === "w" || e.key === "W") && player.onGround && !L3.done) {
+    // Center tap jump; sides move
+    if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+      if (player.onGround && !L2.done) {
+        const items = (L2.carryFood + L2.carryTech);
+        const jm = clamp(1 - items * 0.25, 0, 1);
+        if (L2.noJumpT <= 0 && jm > 0.01) {
+          player.vy = -PHYS.jumpV * jm;
+          player.onGround = false;
+          SFX.jump();
+        } else {
+          SFX.tick();
+        }
+      }
+      clearTouch();
+    } else {
+      setTouchFromGX(gx);
+    }
+    return;
+  }
+
+  if (state.screen === "level3") {
+    // Level 3 complete -> tap center to go to Credits
+    if (L3.done && gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+      state.screen = "credits";
+      SFX.start();
+      clearTouch();
+      return;
+    }
+
+    // Center tap jump (disabled only while caught); sides move
+    if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
+      if (player.onGround && !L3.done) {
         if (L3.caughtT <= 0) {
           player.vy = -PHYS.jumpV;
           player.onGround = false;
@@ -3743,109 +3824,18 @@ if (e.key === "Escape") {
           SFX.tick();
         }
       }
-      // (Other Level 3 key handling remains unchanged elsewhere)
-    }
-
-
-    if (state.screen === "level1") {
-      // If Level 1 complete: tap center to go to Level 2
-      if (L1.levelDone && gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
-        resetLevel2();
-        state.screen = "level2";
-        SFX.start();
-        return;
-      }
-
-      if (L1.phase === "carrot" || L1.phase === "colouring") {
-        if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
-          if (player.onGround) { player.vy = -PHYS.jumpV; player.onGround = false; SFX.jump(); }
-          clearTouch();
-        } else {
-          setTouchFromGX(gx);
-        }
-      } else if (L1.phase === "shot") {
-        if (gx > VIEW.gw * 0.66 && gy < VIEW.gh * 0.35) {
-          fireShot();
-        } else {
-          setTouchFromGX(gx);
-        }
-      }
-      return;
-    }
-
-    if (state.screen === "level1") {
-  // On mobile: tap/click center on Level 1 Complete screen to continue
-  if (L1.levelDone) {
-    if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
-      resetLevel2();
-      state.screen = "level2";
-      SFX.start();
+      clearTouch();
+    } else {
+      setTouchFromGX(gx);
     }
     return;
   }
+});
 
-  // Phase A/C jump (center tap) handled via touch controls below; left/right for movement
-  if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
-    if ((L1.phase === "carrot" || L1.phase === "colouring") && player.onGround) {
-      player.vy = -PHYS.jumpV;
-      player.onGround = false;
-      SFX.jump();
-    }
-    clearTouch();
-  } else {
-    setTouchFromGX(gx);
-  }
-  return;
-}
-
-    if (state.screen === "level2") {
-// If Level 2 complete: tap center to go to Level 3
-if (L2.done && gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
-  resetLevel3();
-  state.screen = "level3";
-  SFX.start();
-  return;
-}
-
-      if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
-        if (player.onGround && !L2.done) {
-          const items = (L2.carryFood + L2.carryTech);
-          const jm = clamp(1 - items * 0.25, 0, 1);
-          if (L2.noJumpT <= 0 && jm > 0.01) {
-            player.vy = -PHYS.jumpV * jm;
-            player.onGround = false;
-            SFX.jump();
-          } else {
-            SFX.tick();
-          }
-        }
-        clearTouch();
-      } else {
-        setTouchFromGX(gx);
-      }
-
-if (state.screen === "level3") {
-  if (gx >= VIEW.gw * 0.33 && gx <= VIEW.gw * 0.66) {
-    if (L3.done) {
-      state.screen = "credits";
-      SFX.start();
-      clearTouch();
-      return;
-    }
-    if (player.onGround && !L3.done && L3.caughtT <= 0) { player.vy = -PHYS.jumpV; player.onGround = false; SFX.jump(); }
-    clearTouch();
-  } else {
-    setTouchFromGX(gx);
-  }
-  return;
-}
-
-      return;
-    }
-  });
-
-  canvas.addEventListener("pointermove", (e) => {
-    if (e.buttons !== 1) return;
+canvas.addEventListener("pointermove", (e) => {
+    // On touch, `buttons` is often 0; use pressure/pointerType instead.
+    if (e.pointerType !== "touch" && e.buttons !== 1) return;
+    if (e.pointerType === "touch" && e.pressure === 0) return;
     const { gx } = screenToGame(e.clientX, e.clientY);
     if (!inGameBounds(gx, 1)) return;
 
