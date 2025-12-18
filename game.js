@@ -2051,7 +2051,7 @@ function updateLevel3(dt) {
 
     if (rectsOverlap(player.x, player.y, player.w, player.h, ic.x, ic.y, 12, 14)) {
       ic.alive = false;
-      L3.score += 60;
+      L3.score += 25;
       j.clipT = 0.45;
       SFX.tick();
       spawnSparkles(player.x + player.w * 0.5, player.y + 10, 10);
@@ -3377,19 +3377,63 @@ function drawLevel2() {
     if (k === 2) drawPoster(px, py, 160, 88, "THANK YOU!", "Moncton supports.", "#2FAE5A");
   }
 
-  // Bus filling in background (simple)
-  const busX = VIEW.gw - 220;
-  const busY = floorY - 120;
-  drawPixelRect(busX - 2, busY - 2, 206, 92, "rgba(0,0,0,0.30)");
-  drawPixelRect(busX, busY, 202, 88, "rgba(255,255,255,0.12)");
-  drawPixelRect(busX + 4, busY + 18, 194, 54, "rgba(0,0,0,0.22)");
-  // fill meter inside bus
+  // Bus filling in background (more bus-like)
+  const busX = VIEW.gw - 240;
+  const busY = floorY - 128;
+
+  // soft shadow
+  drawPixelRect(busX - 3, busY - 2, 226, 96, "rgba(0,0,0,0.28)");
+
+  // bus body
+  drawPixelRect(busX, busY + 8, 220, 78, "rgba(255, 213, 74, 0.85)");      // yellow body
+  drawPixelRect(busX, busY + 72, 220, 14, "rgba(0,0,0,0.18)");             // lower trim
+  drawPixelRect(busX + 2, busY + 10, 216, 74, "rgba(255,255,255,0.06)");   // subtle highlight
+
+  // windows row
+  const winY = busY + 18;
+  const winH = 22;
+  for (let i = 0; i < 6; i++) {
+    const wx = busX + 14 + i * 28;
+    drawPixelRect(wx, winY, 22, winH, "rgba(110, 190, 255, 0.55)");
+    drawPixelRect(wx, winY + 1, 22, 2, "rgba(255,255,255,0.20)");
+  }
+
+  // driver window + windshield
+  drawPixelRect(busX + 182, winY - 2, 30, winH + 6, "rgba(110, 190, 255, 0.58)");
+  drawPixelRect(busX + 184, winY - 1, 26, 2, "rgba(255,255,255,0.22)");
+
+  // door
+  drawPixelRect(busX + 156, busY + 18, 18, 58, "rgba(0,0,0,0.20)");
+  drawPixelRect(busX + 158, busY + 22, 14, 50, "rgba(110, 190, 255, 0.40)");
+  drawPixelRect(busX + 165, busY + 22, 1, 50, "rgba(255,255,255,0.18)");
+
+  // headlights + bumper
+  drawPixelRect(busX + 212, busY + 64, 6, 8, "rgba(255,245,190,0.85)");
+  drawPixelRect(busX + 210, busY + 74, 10, 6, "rgba(0,0,0,0.25)");
+
+  // wheels
+  const wheelY = busY + 80;
+  const wheel = (x) => {
+    drawPixelRect(x, wheelY, 26, 10, "rgba(0,0,0,0.85)");
+    drawPixelRect(x + 7, wheelY + 2, 12, 6, "rgba(180,180,180,0.55)");
+  };
+  wheel(busX + 36);
+  wheel(busX + 154);
+
+  // fill meter inside bus (cargo area)
   const fill = clamp((L2.deliveredFood + L2.carryFood) / 20, 0, 1);
-  drawPixelRect(busX + 6, busY + 62 - Math.round(44 * fill), 190, Math.round(44 * fill), "rgba(123,214,255,0.35)");
-  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  const cargoX = busX + 10;
+  const cargoY = busY + 52;
+  const cargoW = 140;
+  const cargoH = 30;
+  drawPixelRect(cargoX, cargoY, cargoW, cargoH, "rgba(0,0,0,0.18)");
+  drawPixelRect(cargoX + 2, cargoY + cargoH - 2 - Math.round((cargoH - 4) * fill), cargoW - 4, Math.round((cargoH - 4) * fill), "rgba(123,214,255,0.35)");
+
+  // label
+  ctx.fillStyle = "rgba(0,0,0,0.60)";
   ctx.font = "900 10px system-ui, Arial";
   ctx.textAlign = "center";
-  ctx.fillText("BUS", busX + 100, busY + 14);
+  ctx.fillText("SCHOOL BUS", busX + 110, busY + 16);
 
   // Crates labelled “Community”
   const crateCam = L2.camX * 0.85;
