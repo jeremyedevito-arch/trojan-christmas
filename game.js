@@ -12,11 +12,11 @@
     selected: 0,
     chars: [
       { name: "Holli", tag: "Calm in the chaos." },
-      { name: "Emily", tag: "Drama. Energy. Motion." },
+      { name: "Emily", tag: "Verbal flair with a sharp tongue." },
       { name: "Devin", tag: "Built for the long jump." },
       { name: "Brandon", tag: "IB approved." },
       { name: "Colleen", tag: "School mom magic." },
-      { name: "Melissa", tag: "All the pieces in motion." },
+      { name: "Melissa", tag: "Student Leadership Mentor Extraordinaire." },
     ],
   };
 
@@ -27,6 +27,8 @@
   function isChar(name) { return getCharName() === name; }
 // -------------------- Letterbox view (16:9) + phone zoom --------------------
   let VIEW = { gw: 960, gh: 540, scale: 1, ox: 0, oy: 0 };
+  const HTHS_MAROON = "#832839";
+
 
   function computeView() {
     VIEW.scale = Math.min(state.w / VIEW.gw, state.h / VIEW.gh);
@@ -2727,7 +2729,7 @@ function drawHallPosters() {
   if (L1.phase === "colouring") {
     for (let i = 0; i < 6; i++) {
       const x = Math.round(60 + i * period - off);
-      const y = Math.round(floorY - 122);
+      const y = Math.round(floorY -  180);
       poster(x, y, "HTHS", "Christmas Colouring", "Color every square!", "rgba(0,110,70,0.55)");
     }
   }
@@ -2873,11 +2875,15 @@ function drawMarchHare() {
 
   // -------------------- Screens --------------------
   function drawTitle() {
+    drawPixelRect(0, 0, VIEW.gw, VIEW.gh, HTHS_MAROON);
+
     drawCenteredText("A Very Trojan Christmas", VIEW.gh * 0.35, 34);
     drawCenteredText("Tap / Press Enter to start", VIEW.gh * 0.45, 18, 0.85);
   }
 
   function drawSelect() {
+    drawPixelRect(0, 0, VIEW.gw, VIEW.gh, HTHS_MAROON);
+
     drawCenteredText("Choose Your Character", VIEW.gh * 0.18, 28);
     const c = state.chars[state.selected];
     drawCenteredText(`${c.name} — ${c.tag}`, VIEW.gh * 0.26, 16, 0.9);
@@ -3097,30 +3103,43 @@ function drawCoin(x, y, r) {
 }
 
 function drawCredits() {
-  drawPixelRect(0, 0, VIEW.gw, VIEW.gh, "#061425");
-  drawPixelRect(0, 0, VIEW.gw, 34, "rgba(255,214,120,0.10)");
+  // Festive background: maroon + green panels
+  drawPixelRect(0, 0, VIEW.gw, VIEW.gh, HTHS_MAROON);
+  drawPixelRect(0, 0, VIEW.gw, 42, "rgba(255,255,255,0.10)");
+  drawPixelRect(0, VIEW.gh - 46, VIEW.gw, 46, "rgba(0,0,0,0.10)");
 
-  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  // Red / white / green accents
+  const bandW = Math.round(VIEW.gw * 0.18);
+  drawPixelRect(0, 0, bandW, VIEW.gh, "rgba(0,130,70,0.55)");
+  drawPixelRect(VIEW.gw - bandW, 0, bandW, VIEW.gh, "rgba(0,130,70,0.55)");
+  drawPixelRect(Math.round(VIEW.gw / 2 - 2), 0, 4, VIEW.gh, "rgba(255,255,255,0.18)");
+
+  // Snowfall (deterministic flakes)
+  for (let i = 0; i < 90; i++) {
+    const sx = (i * 97 + 13) % VIEW.gw;
+    const sp = 18 + (i * 7) % 34;
+    const sy = (Math.floor((state.t * sp) + i * 31) % (VIEW.gh + 40)) - 20;
+    drawPixelRect(sx, sy, 2, 2, "rgba(255,255,255,0.75)");
+  }
+
   ctx.textAlign = "center";
-  ctx.font = "900 30px system-ui, Arial";
-  ctx.fillText("CREDITS", VIEW.gw / 2, VIEW.gh * 0.20);
 
-  ctx.font = "800 16px system-ui, Arial";
+  ctx.fillStyle = "rgba(255,255,255,0.96)";
+  ctx.font = "900 26px system-ui, Arial";
+  ctx.fillText("Happy Holidays! (You earned it!)", VIEW.gw / 2, VIEW.gh * 0.22);
+
+  ctx.font = "900 18px system-ui, Arial";
+  ctx.fillStyle = "rgba(255,255,255,0.94)";
+  ctx.fillText(`Final Score: ${L3.score}`, VIEW.gw / 2, VIEW.gh * 0.36);
+
+  ctx.font = "800 14px system-ui, Arial";
   ctx.fillStyle = "rgba(255,255,255,0.90)";
-  ctx.fillText("HTHS Holiday Hallway Game", VIEW.gw / 2, VIEW.gh * 0.28);
-
-  ctx.font = "700 14px system-ui, Arial";
-  ctx.fillStyle = "rgba(255,255,255,0.80)";
-  ctx.fillText("Created with Trojan spirit ✨", VIEW.gw / 2, VIEW.gh * 0.34);
-
-  ctx.font = "800 16px system-ui, Arial";
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.fillText(`Final Score: ${L3.score}`, VIEW.gw / 2, VIEW.gh * 0.46);
+  ctx.fillText("Created with Trojan Spirit by djeremy, and ChatGPT 5.2", VIEW.gw / 2, VIEW.gh * 0.48);
 
   ctx.font = "700 13px system-ui, Arial";
-  ctx.fillStyle = "rgba(255,255,255,0.70)";
-  ctx.fillText("Press Enter to return to the Title Screen", VIEW.gw / 2, VIEW.gh * 0.62);
-  ctx.fillText("(Tap/Click center on mobile)", VIEW.gw / 2, VIEW.gh * 0.66);
+  ctx.fillStyle = "rgba(255,255,255,0.78)";
+  ctx.fillText("Press Enter to return to the Title Screen", VIEW.gw / 2, VIEW.gh * 0.64);
+  ctx.fillText("(Tap/Click center on mobile)", VIEW.gw / 2, VIEW.gh * 0.68);
 }
 
 function drawPoster(x, y, w, h, title, sub, accent = "#FFD24D") {
