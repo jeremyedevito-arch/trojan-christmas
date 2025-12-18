@@ -1585,7 +1585,6 @@ function updateGary(dt, floorY) {
     g.hiCd = 1.2;
     showL2Banner(delivered > 0 ? "GARY: NICE WORK! I’LL TAKE THAT." : "GARY: KEEP IT UP!");
     SFX.dingding();
-    FX.flashT = 0.18;
     spawnSparkles(player.x + player.w * 0.5, player.y + 8, 10);
   }
 }
@@ -1625,22 +1624,13 @@ function updateMichelleB(dt, floorY) {
   const m = L2.michelle;
   if (!m.active) return;
 
+  // Match Level 1 behavior: brief pop-in, big flash, then disappear.
   m.y = floorY - m.h;
-  if (m.snapCd > 0) m.snapCd -= dt;
+  m.t = (m.t || 0) + dt;
 
-  const sx = m.x - L2.camX;
-
-  // one-time photo bonus on proximity
-  const dx = (player.x + player.w * 0.5) - (sx + m.w * 0.5);
-  const dy = (player.y + player.h * 0.5) - (m.y + m.h * 0.5);
-  const dist2 = dx * dx + dy * dy;
-
-  if (!m.seen && dist2 < (120 * 120)) {
-    m.seen = true;
-    L2.score += 80;
-    FX.flashT = 0.18;
-    SFX.shutter();
-    showL2Banner("MICHELLE: SMILE! 📸");
+  if (m.t > 1.2) {
+    m.active = false;
+    return;
   }
 }
 
@@ -1797,14 +1787,19 @@ function updateLevel2(dt) {
     // NPCs
     updateGary(dt, floorY);
     updateChris(dt, floorY);
-
     // Michelle appears near the end (last ~10s)
     if (!L2.michelle.seen && L2.phaseT <= 10.0) {
       if (!L2.michelle.active) {
         L2.michelle.active = true;
+        L2.michelle.t = 0;
         L2.michelle.x = L2.camX + VIEW.gw * 0.70;
         L2.michelle.y = floorY - L2.michelle.h;
-        L2.michelle.seen = false;
+        // Trigger the photo immediately (match Level 1 pop-in)
+        L2.michelle.seen = true;
+        L2.score += 80;
+        FX.flashT = 0.18;
+        SFX.shutter();
+        showL2Banner("MICHELLE: SMILE! 📸");
       }
       // keep her roughly in view
       L2.michelle.x = (L2.camX + VIEW.gw * 0.70);
