@@ -859,11 +859,12 @@ function updateNPCs(dt) {
     if (w.x < -40 || w.t > 5) w.alive = false;
   }
   L1.walkers = L1.walkers.filter(w => w.alive);
-
-  if (FX.flashT > 0) FX.flashT -= dt;
 }
 
 function updateFX(dt) {
+  // global flash fade (used by Michelle in multiple levels)
+  if (FX.flashT > 0) FX.flashT = Math.max(0, FX.flashT - dt);
+
     for (const p of FX.confetti) {
       p.t += dt;
       p.vy += p.g * dt;
