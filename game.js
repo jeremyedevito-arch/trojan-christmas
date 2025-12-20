@@ -753,7 +753,7 @@ function updateNPCs(dt) {
         h.active = false;
         h._screenLock = false;
         h.t = 7 + Math.random() * 6; // gone for a bit
-        L1.score += 300;
+        L1.score += 500;
         SFX.dingding();
         spawnSparkles(player.x + player.w * 0.5, player.y + 10, 18);
         spawnConfettiBurst();
@@ -798,7 +798,7 @@ function updateNPCs(dt) {
 
       if (rectsOverlap(player.x, player.y, player.w, player.h, ic.x, ic.y, 12, 14)) {
         ic.alive = false;
-        L1.score += 60;
+        L1.score += 100;
         j.clipT = 0.45;
         SFX.tick();
         spawnSparkles(player.x + player.w * 0.5, player.y + 10, 10);
@@ -1455,10 +1455,10 @@ function updateMarcy(dt, floorY) {
       SFX.tick();
       return;
     }
-    L2.slowT = 5.0;
+    L2.slowT = 3.0;
     m.following = true;
     m.followT = 5.0;
-    L2.noJumpT = 5.0;
+    L2.noJumpT = 3.0;
     showL2Banner("MARCY: TRAIL RELAY SIGNUP??");
     SFX.tick();
   }
@@ -2702,7 +2702,7 @@ function drawHallPosters() {
       const y = Math.round(floorY - 122);
 
       if (i % 2 === 0) {
-        poster(x, y, "MISSING:", "March Hare", "Reward: 300");
+        poster(x, y, "MISSING:", "March Hare", "Reward: 500");
 
         drawPixelRect(x + 64, y + 22, 10, 14, "rgba(255,255,255,0.18)");
         drawPixelRect(x + 62, y + 20, 4, 6, "rgba(255,255,255,0.18)");
